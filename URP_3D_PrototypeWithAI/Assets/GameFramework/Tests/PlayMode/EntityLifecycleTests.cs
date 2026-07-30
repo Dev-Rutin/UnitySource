@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using NUnit.Framework;
 using Rutin.GameFramework.Core;
+using Rutin.GameFramework.Factory;
 using Rutin.GameFramework.Management;
 using Rutin.GameFramework.Ticking;
 using UnityEngine;
@@ -208,6 +209,22 @@ namespace Rutin.GameFramework.Tests.PlayMode
             protected override void OnServiceShutdown()
             {
                 throw new System.InvalidOperationException("Service shutdown failure");
+            }
+        }
+
+        private sealed class ThrowingShutdownPathDeactivationService : GameServiceBehaviour
+        {
+            public int ShutdownCount { get; private set; }
+
+            protected override void OnServiceDeactivated()
+            {
+                throw new System.InvalidOperationException(
+                    "Shutdown path deactivation failure");
+            }
+
+            protected override void OnServiceShutdown()
+            {
+                ShutdownCount++;
             }
         }
 
@@ -497,6 +514,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 hostObject.AddComponent<ThrowingDeactivationService>();
             ThrowingShutdownService throwingShutdown =
                 hostObject.AddComponent<ThrowingShutdownService>();
+            ThrowingShutdownPathDeactivationService shutdownPath =
+                hostObject.AddComponent<ThrowingShutdownPathDeactivationService>();
 
             LogAssert.Expect(
                 LogType.Exception,
@@ -513,6 +532,15 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 new System.Text.RegularExpressions.Regex("Service shutdown failure"));
             Object.Destroy(throwingShutdown);
             yield return null;
+            Assert.That(host.ServiceCount, Is.EqualTo(4));
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex(
+                    "Shutdown path deactivation failure"));
+            Object.Destroy(shutdownPath);
+            yield return null;
+            Assert.That(shutdownPath.ShutdownCount, Is.EqualTo(1));
             Assert.That(host.ServiceCount, Is.EqualTo(3));
 
             LogAssert.Expect(
@@ -523,6 +551,26 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             Assert.That(following.IsServiceActive, Is.False);
             Assert.That(throwingDeactivation.IsServiceActive, Is.False);
+
+            Object.Destroy(hostObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator PooledFactory_IsResolvableAsManagerService()
+        {
+            GameObject hostObject = new("Pooled Factory Host");
+            hostObject.SetActive(false);
+            GameManagerHost host = hostObject.AddComponent<GameManagerHost>();
+            PooledObjectFactory factory = hostObject.AddComponent<PooledObjectFactory>();
+
+            hostObject.SetActive(true);
+            yield return null;
+
+            Assert.That(
+                host.TryGetService<IPooledObjectFactory>(out IPooledObjectFactory resolved),
+                Is.True);
+            Assert.That(resolved, Is.SameAs(factory));
 
             Object.Destroy(hostObject);
             yield return null;

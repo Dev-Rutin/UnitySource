@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Rutin.GameFramework.Management;
 using UnityEngine;
 
 namespace Rutin.GameFramework.Factory
@@ -18,22 +19,29 @@ namespace Rutin.GameFramework.Factory
     /// hashing and allocations on spawn hot paths.
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PooledObjectFactory : MonoBehaviour
+    public sealed class PooledObjectFactory : GameServiceBehaviour, IPooledObjectFactory
     {
         [SerializeField] private Transform inactiveRoot;
         [SerializeField] private List<PoolDefinition> definitions = new();
 
         private readonly Dictionary<int, GameObjectPool> _pools = new(16);
         private bool _initialized;
+        private bool _hasShutDown;
 
         public int PoolCount => _pools.Count;
 
-        private void Awake()
+        protected override void RegisterServiceContracts()
         {
+            RegisterContract<IPooledObjectFactory>();
+        }
+
+        protected override void OnServiceInitialized()
+        {
+            _hasShutDown = false;
             Initialize();
         }
 
-        private void OnDestroy()
+        protected override void OnServiceShutdown()
         {
             foreach (KeyValuePair<int, GameObjectPool> pair in _pools)
             {
@@ -42,10 +50,17 @@ namespace Rutin.GameFramework.Factory
 
             _pools.Clear();
             _initialized = false;
+            _hasShutDown = true;
         }
 
         public void Initialize()
         {
+            if (_hasShutDown)
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(PooledObjectFactory)} cannot initialize after shutdown.");
+            }
+
             if (_initialized)
             {
                 return;
@@ -75,6 +90,12 @@ namespace Rutin.GameFramework.Factory
             int prewarmCount = 0,
             int maxSize = 1024)
         {
+            if (_hasShutDown)
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(PooledObjectFactory)} cannot register pools after shutdown.");
+            }
+
             if (_pools.ContainsKey(typeId))
             {
                 throw new InvalidOperationException(
@@ -133,6 +154,12 @@ namespace Rutin.GameFramework.Factory
 
         public bool TryGetPool(int typeId, out GameObjectPool pool)
         {
+            if (_hasShutDown)
+            {
+                pool = null;
+                return false;
+            }
+
             return _pools.TryGetValue(typeId, out pool);
         }
     }

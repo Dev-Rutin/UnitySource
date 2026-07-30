@@ -12,13 +12,15 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 ## Management
 
 - Add one `GameManagerHost` to the bootstrap scene.
-- Add `GameServiceBehaviour` components, such as `TickSchedulerService`, to the same object.
+- Add `GameServiceBehaviour` components, such as `TickSchedulerService` and
+  `PooledObjectFactory`, to the same object.
 - Resolve contracts once through `GameManagerHost.Services` and cache the result in hot paths.
 - The registry never scans the scene and does not use LINQ.
 
 ## Factory and pooling
 
-- Configure integer-keyed pools on `PooledObjectFactory`.
+- Configure integer-keyed pools on the host's `PooledObjectFactory`.
+- Resolve `IPooledObjectFactory` through `GameManagerHost.Services` and cache it.
 - Use `TryRent` in gameplay hot paths so capacity exhaustion does not throw.
 - Return objects through `PooledInstance.ReturnToPool()` or the factory.
 - Implement `IPoolable` for deterministic state reset. Callback lists are cached per instance.
@@ -50,9 +52,9 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 9 passed, 0 failed | 0.186 s test duration |
-| PlayMode | 2 passed, 0 failed | 2.004 s test duration |
-| 5,000-object pooled rent/return | Passed | 247.568 ms, 0 managed bytes |
+| EditMode | 18 passed, 0 failed | 0.461 s test duration |
+| PlayMode | 14 passed, 0 failed | 2.311 s test duration |
+| 5,000-object pooled rent/return | Passed | 193.801 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

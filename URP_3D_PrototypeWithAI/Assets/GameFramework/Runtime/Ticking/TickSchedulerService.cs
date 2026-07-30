@@ -28,7 +28,7 @@ namespace Rutin.GameFramework.Ticking
         private bool _hasShutDown;
         private int _consecutiveSaturatedFrames;
 
-        public int Count => EnsureScheduler().Count;
+        public int Count => _scheduler?.Count ?? 0;
 
         public TickBatchStats LastFrameStats { get; private set; }
 

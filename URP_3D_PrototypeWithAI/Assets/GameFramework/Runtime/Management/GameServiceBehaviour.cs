@@ -125,16 +125,42 @@ namespace Rutin.GameFramework.Management
                 return;
             }
 
+            Exception firstException = null;
             try
             {
                 SetServiceActive(false);
+            }
+            catch (Exception exception)
+            {
+                firstException = exception;
+            }
+
+            try
+            {
                 OnServiceShutdown();
+            }
+            catch (Exception exception)
+            {
+                if (firstException == null)
+                {
+                    firstException = exception;
+                }
+                else
+                {
+                    Debug.LogException(exception, this);
+                }
             }
             finally
             {
                 UnregisterContracts();
+                _active = false;
                 _initialized = false;
                 _host = null;
+            }
+
+            if (firstException != null)
+            {
+                throw firstException;
             }
         }
 

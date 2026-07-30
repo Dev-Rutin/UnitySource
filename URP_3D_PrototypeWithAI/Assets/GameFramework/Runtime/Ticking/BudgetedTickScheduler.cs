@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Rutin.GameFramework.Utilities;
+using Debug = UnityEngine.Debug;
+using Object = UnityEngine.Object;
 
 namespace Rutin.GameFramework.Ticking
 {
@@ -168,15 +170,39 @@ namespace Rutin.GameFramework.Ticking
                     double accumulatedDeltaTime =
                         Math.Max(0d, _elapsedTime - _lastTickTimes[currentIndex]);
                     _lastTickTimes[currentIndex] = _elapsedTime;
-                    if (!tickable.IsTickEnabled)
+                    bool isTickEnabled;
+                    try
+                    {
+                        isTickEnabled = tickable.IsTickEnabled;
+                    }
+                    catch (Exception exception)
+                    {
+                        QuarantineFailedTickable(tickable, exception);
+                        if (hasTimeBudget &&
+                            GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
+                        {
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    if (!isTickEnabled)
                     {
                         continue;
                     }
 
-                    tickable.Tick((float)Math.Min(
-                        accumulatedDeltaTime,
-                        maxAccumulatedDeltaTime));
                     processed++;
+                    try
+                    {
+                        tickable.Tick((float)Math.Min(
+                            accumulatedDeltaTime,
+                            maxAccumulatedDeltaTime));
+                    }
+                    catch (Exception exception)
+                    {
+                        QuarantineFailedTickable(tickable, exception);
+                    }
 
                     if (hasTimeBudget &&
                         GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
@@ -230,6 +256,14 @@ namespace Rutin.GameFramework.Ticking
         {
             long elapsedTicks = Stopwatch.GetTimestamp() - startTimestamp;
             return elapsedTicks * 1000d / Stopwatch.Frequency;
+        }
+
+        private void QuarantineFailedTickable(
+            IGameTickable tickable,
+            Exception exception)
+        {
+            Debug.LogException(exception, tickable as Object);
+            Unregister(tickable);
         }
     }
 }

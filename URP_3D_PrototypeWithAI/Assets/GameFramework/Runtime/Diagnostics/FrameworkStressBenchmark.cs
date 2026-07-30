@@ -80,70 +80,82 @@ namespace Rutin.GameFramework.Diagnostics
             }
 
             _running = true;
-            _activeInstances.Clear();
-            if (_activeInstances.Capacity < objectCount)
+            try
             {
-                _activeInstances.Capacity = objectCount;
-            }
+                _activeInstances.Clear();
+                if (_activeInstances.Capacity < objectCount)
+                {
+                    _activeInstances.Capacity = objectCount;
+                }
 
-            pool.Warmup(objectCount);
-            yield return null;
-
-            long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            RentAll(pool);
-            stopwatch.Stop();
-            double initialActivationMs = stopwatch.Elapsed.TotalMilliseconds;
-
-            ReturnAll(pool);
-            yield return null;
-
-            double totalCycleMilliseconds = 0d;
-            for (int cycle = 0; cycle < measuredCycles; cycle++)
-            {
-                stopwatch.Restart();
-                RentAll(pool);
-                ReturnAll(pool);
-                stopwatch.Stop();
-                totalCycleMilliseconds += stopwatch.Elapsed.TotalMilliseconds;
+                pool.Warmup(objectCount);
                 yield return null;
+
+                long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                RentAll(pool);
+                stopwatch.Stop();
+                double initialActivationMs = stopwatch.Elapsed.TotalMilliseconds;
+
+                ReturnAll(pool);
+                yield return null;
+
+                double totalCycleMilliseconds = 0d;
+                for (int cycle = 0; cycle < measuredCycles; cycle++)
+                {
+                    stopwatch.Restart();
+                    RentAll(pool);
+                    ReturnAll(pool);
+                    stopwatch.Stop();
+                    totalCycleMilliseconds += stopwatch.Elapsed.TotalMilliseconds;
+                    yield return null;
+                }
+
+                long allocatedBytes = Math.Max(
+                    0L,
+                    GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
+                double averageCycleMs = totalCycleMilliseconds / measuredCycles;
+                bool passed =
+                    initialActivationMs <= initialActivationBudgetMilliseconds &&
+                    averageCycleMs <= averageCycleBudgetMilliseconds &&
+                    allocatedBytes <= allocationBudgetBytes;
+
+                LastResult = new StressBenchmarkResult
+                {
+                    objectCount = objectCount,
+                    measuredCycles = measuredCycles,
+                    initialActivationMilliseconds = initialActivationMs,
+                    averageCycleMilliseconds = averageCycleMs,
+                    measuredAllocatedBytes = allocatedBytes,
+                    passed = passed
+                };
+
+                string summary =
+                    $"Framework stress benchmark: objects={objectCount}, " +
+                    $"activate={initialActivationMs:F2} ms, " +
+                    $"average cycle={averageCycleMs:F2} ms, " +
+                    $"allocated={allocatedBytes} bytes, passed={passed}.";
+
+                if (passed)
+                {
+                    Debug.Log(summary, this);
+                }
+                else
+                {
+                    Debug.LogError(summary, this);
+                }
             }
-
-            long allocatedBytes = Math.Max(
-                0L,
-                GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
-            double averageCycleMs = totalCycleMilliseconds / measuredCycles;
-            bool passed =
-                initialActivationMs <= initialActivationBudgetMilliseconds &&
-                averageCycleMs <= averageCycleBudgetMilliseconds &&
-                allocatedBytes <= allocationBudgetBytes;
-
-            LastResult = new StressBenchmarkResult
+            finally
             {
-                objectCount = objectCount,
-                measuredCycles = measuredCycles,
-                initialActivationMilliseconds = initialActivationMs,
-                averageCycleMilliseconds = averageCycleMs,
-                measuredAllocatedBytes = allocatedBytes,
-                passed = passed
-            };
-
-            string summary =
-                $"Framework stress benchmark: objects={objectCount}, " +
-                $"activate={initialActivationMs:F2} ms, " +
-                $"average cycle={averageCycleMs:F2} ms, " +
-                $"allocated={allocatedBytes} bytes, passed={passed}.";
-
-            if (passed)
-            {
-                Debug.Log(summary, this);
+                try
+                {
+                    ReturnAll(pool);
+                }
+                finally
+                {
+                    _running = false;
+                }
             }
-            else
-            {
-                Debug.LogError(summary, this);
-            }
-
-            _running = false;
         }
 
         private void RentAll(GameObjectPool pool)

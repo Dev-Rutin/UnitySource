@@ -1,6 +1,8 @@
 using System;
 using NUnit.Framework;
 using Rutin.GameFramework.Ticking;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Rutin.GameFramework.Tests.EditMode
 {
@@ -21,6 +23,34 @@ namespace Rutin.GameFramework.Tests.EditMode
                 TickCount++;
                 LastDeltaTime = deltaTime;
                 OnTick?.Invoke();
+            }
+        }
+
+        private sealed class ThrowingTickable : IGameTickable
+        {
+            private readonly bool _throwFromEnabledGetter;
+
+            public ThrowingTickable(bool throwFromEnabledGetter)
+            {
+                _throwFromEnabledGetter = throwFromEnabledGetter;
+            }
+
+            public bool IsTickEnabled
+            {
+                get
+                {
+                    if (_throwFromEnabledGetter)
+                    {
+                        throw new InvalidOperationException("Tick enabled failure");
+                    }
+
+                    return true;
+                }
+            }
+
+            public void Tick(float deltaTime)
+            {
+                throw new InvalidOperationException("Tick callback failure");
             }
         }
 
@@ -179,6 +209,28 @@ namespace Rutin.GameFramework.Tests.EditMode
             scheduler.Tick(0.2f, 0d, 1, 0.25f);
 
             Assert.That(delayed.LastDeltaTime, Is.EqualTo(0.25f).Within(0.0001f));
+        }
+
+        [Test]
+        public void Tick_CallbackFailuresAreLoggedAndQuarantined()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ProbeTickable healthy = new();
+            scheduler.Register(new ThrowingTickable(true));
+            scheduler.Register(new ThrowingTickable(false));
+            scheduler.Register(healthy);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick enabled failure"));
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick callback failure"));
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(healthy.TickCount, Is.EqualTo(1));
+            Assert.That(scheduler.Count, Is.EqualTo(1));
         }
     }
 }
