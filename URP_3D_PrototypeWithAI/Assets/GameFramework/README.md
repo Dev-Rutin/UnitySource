@@ -56,6 +56,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   Runtime `SetViewTransforms` changes update the automatic motor reference and preserve view
   offsets; an explicit `SetMovementSpace` remains authoritative.
 - Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
+  Explicit injection, including `SetTickScheduler(null)` for detachment, never falls back to the
+  default world. Call `UseDefaultTickScheduler()` to opt back into default-host resolution.
 
 ## Factory and pooling
 
@@ -94,10 +96,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 26 passed, 0 failed | 0.295 s test duration |
-| PlayMode | 36 passed, 0 failed | 1.025 s test duration |
+| EditMode | 26 passed, 0 failed | 0.157 s test duration |
+| PlayMode | 37 passed, 0 failed | 0.898 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 112.622 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 84.755 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

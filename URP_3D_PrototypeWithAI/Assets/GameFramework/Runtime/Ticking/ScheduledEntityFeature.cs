@@ -17,6 +17,7 @@ namespace Rutin.GameFramework.Ticking
         private ITickScheduler _scheduler;
         private bool _registered;
         private bool _missingSchedulerLogged;
+        private bool _hasExplicitScheduler;
 
         public abstract bool IsTickEnabled { get; }
 
@@ -49,13 +50,31 @@ namespace Rutin.GameFramework.Ticking
 
         public void SetTickScheduler(ITickScheduler scheduler)
         {
-            if (ReferenceEquals(_scheduler, scheduler))
+            bool schedulerChanged = !ReferenceEquals(_scheduler, scheduler);
+            if (!schedulerChanged && _hasExplicitScheduler)
             {
                 return;
             }
 
-            UnregisterFromScheduler();
+            if (schedulerChanged)
+            {
+                UnregisterFromScheduler();
+            }
+
+            _hasExplicitScheduler = true;
             _scheduler = scheduler;
+            _missingSchedulerLogged = false;
+            if (IsFeatureActive && _scheduler != null)
+            {
+                RegisterWithScheduler();
+            }
+        }
+
+        public void UseDefaultTickScheduler()
+        {
+            UnregisterFromScheduler();
+            _hasExplicitScheduler = false;
+            _scheduler = null;
             _missingSchedulerLogged = false;
             if (IsFeatureActive)
             {
@@ -94,6 +113,7 @@ namespace Rutin.GameFramework.Ticking
                 GameManagerHost.DefaultServicesChanged -= HandleDefaultServicesChanged;
                 _scheduler = null;
                 _missingSchedulerLogged = false;
+                _hasExplicitScheduler = false;
             }
         }
 
@@ -124,7 +144,7 @@ namespace Rutin.GameFramework.Ticking
 
         private void ResolveDefaultScheduler()
         {
-            if (_scheduler != null)
+            if (_scheduler != null || _hasExplicitScheduler)
             {
                 return;
             }
@@ -138,16 +158,16 @@ namespace Rutin.GameFramework.Ticking
 
         private void HandleDefaultServicesChanged()
         {
-            if (!IsFeatureActive || _registered)
+            if (!IsFeatureActive || _registered || _hasExplicitScheduler)
             {
                 return;
             }
 
             ResolveDefaultScheduler();
-            RegisterWithScheduler();
+            RegisterWithScheduler(false);
         }
 
-        private void RegisterWithScheduler()
+        private void RegisterWithScheduler(bool logFailure = true)
         {
             if (_registered)
             {
@@ -157,7 +177,7 @@ namespace Rutin.GameFramework.Ticking
             ResolveDefaultScheduler();
             if (_scheduler == null)
             {
-                if (!_missingSchedulerLogged)
+                if (logFailure && !_hasExplicitScheduler && !_missingSchedulerLogged)
                 {
                     Debug.LogWarning(
                         $"{GetType().Name} could not resolve {nameof(ITickScheduler)}. " +
@@ -173,9 +193,10 @@ namespace Rutin.GameFramework.Ticking
             _registered = _scheduler.Register(this);
             if (_registered)
             {
+                _missingSchedulerLogged = false;
                 OnSchedulerRegistered();
             }
-            else
+            else if (logFailure)
             {
                 Debug.LogWarning(
                     $"{GetType().Name} was already registered or its scheduler rejected it.",

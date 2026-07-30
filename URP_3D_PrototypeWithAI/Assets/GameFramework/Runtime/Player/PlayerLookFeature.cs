@@ -52,6 +52,10 @@ namespace Rutin.GameFramework.Player
 
             float previousYaw = preserveViewAngles ? _yaw : 0f;
             float previousPitch = preserveViewAngles ? _pitch : 0f;
+            if (IsFeatureInitialized)
+            {
+                RestoreBaseRotations();
+            }
             yawRoot = newYawRoot;
             pitchPivot = newPitchPivot;
             CaptureBaseRotations();
@@ -117,6 +121,16 @@ namespace Rutin.GameFramework.Player
                 : Quaternion.identity;
             _yaw = 0f;
             _pitch = 0f;
+        }
+
+        private void RestoreBaseRotations()
+        {
+            Transform activeYawRoot = MovementReference;
+            activeYawRoot.localRotation = _baseYawRotation;
+            if (pitchPivot != null)
+            {
+                pitchPivot.localRotation = _basePitchRotation;
+            }
         }
 
         private void UpdateMotorMovementReference()

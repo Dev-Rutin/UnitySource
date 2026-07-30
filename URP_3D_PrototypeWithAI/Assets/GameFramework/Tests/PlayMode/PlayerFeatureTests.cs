@@ -339,11 +339,65 @@ namespace Rutin.GameFramework.Tests.PlayMode
             player.SetActive(true);
             Assert.That(original.Count, Is.EqualTo(1));
 
-            UnityEngine.Object.DestroyImmediate(original);
-            TickSchedulerService replacement =
-                hostObject.AddComponent<TickSchedulerService>();
+            int missingSchedulerWarnings = 0;
+            void CountMissingSchedulerWarning(
+                string condition,
+                string stackTrace,
+                LogType type)
+            {
+                if (type == LogType.Warning &&
+                    condition.Contains("could not resolve ITickScheduler"))
+                {
+                    missingSchedulerWarnings++;
+                }
+            }
+
+            Application.logMessageReceived += CountMissingSchedulerWarning;
+            TickSchedulerService replacement;
+            try
+            {
+                UnityEngine.Object.DestroyImmediate(original);
+                replacement = hostObject.AddComponent<TickSchedulerService>();
+            }
+            finally
+            {
+                Application.logMessageReceived -= CountMissingSchedulerWarning;
+            }
 
             Assert.That(replacement.Count, Is.EqualTo(1));
+            Assert.That(missingSchedulerWarnings, Is.Zero);
+        }
+
+        [Test]
+        public void ScheduledFeature_ExplicitSchedulerNeverFallsBackToDefault()
+        {
+            GameObject hostObject = CreateObject("Default Scheduler Host");
+            TickSchedulerService defaultScheduler =
+                hostObject.AddComponent<TickSchedulerService>();
+            BudgetedTickScheduler explicitScheduler = new();
+            CreateCommandPlayer(
+                explicitScheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out _);
+            Assert.That(explicitScheduler.Count, Is.EqualTo(1));
+            Assert.That(defaultScheduler.Count, Is.Zero);
+
+            explicitScheduler.Clear();
+
+            Assert.That(explicitScheduler.Count, Is.Zero);
+            Assert.That(defaultScheduler.Count, Is.Zero);
+
+            commands.SetTickScheduler(explicitScheduler);
+            Assert.That(explicitScheduler.Count, Is.EqualTo(1));
+            Assert.That(defaultScheduler.Count, Is.Zero);
+
+            commands.SetTickScheduler(null);
+            Assert.That(explicitScheduler.Count, Is.Zero);
+            Assert.That(defaultScheduler.Count, Is.Zero);
+
+            commands.UseDefaultTickScheduler();
+            Assert.That(defaultScheduler.Count, Is.EqualTo(1));
         }
 
         [Test]
@@ -519,6 +573,16 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 Quaternion.Angle(
                     replacementYaw.transform.localRotation,
                     replacementBase * Quaternion.AngleAxis(30f, Vector3.up)),
+                Is.LessThan(0.001f));
+
+            lookFeature.SetViewTransforms(
+                yawObject.transform,
+                pitchObject.transform);
+            Assert.That(motor.MovementSpace, Is.SameAs(yawObject.transform));
+            Assert.That(
+                Quaternion.Angle(
+                    yawObject.transform.localRotation,
+                    expectedYaw),
                 Is.LessThan(0.001f));
 
             GameObject explicitMovementSpace =
