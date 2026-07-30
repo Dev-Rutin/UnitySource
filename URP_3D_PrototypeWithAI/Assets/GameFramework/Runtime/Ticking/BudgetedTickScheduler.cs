@@ -43,6 +43,8 @@ namespace Rutin.GameFramework.Ticking
     /// </summary>
     public sealed class BudgetedTickScheduler : ITickScheduler
     {
+        private const int DisabledTimeBudgetCheckInterval = 16;
+
         private readonly List<IGameTickable> _tickables;
         private readonly List<uint> _lastVisitedRounds;
         private readonly List<double> _lastTickTimes;
@@ -240,7 +242,12 @@ namespace Rutin.GameFramework.Ticking
                             ResetFailureCount(tickable);
                         }
 
+                        // Disabled getters are expected to be cheap and can dominate large
+                        // sleeping populations. Sample the clock periodically instead of
+                        // paying for Stopwatch.GetTimestamp on every disabled registration.
                         if (hasTimeBudget &&
+                            (visited == 1 ||
+                             (visited & (DisabledTimeBudgetCheckInterval - 1)) == 0) &&
                             GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
                         {
                             break;

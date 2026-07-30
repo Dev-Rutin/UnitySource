@@ -80,7 +80,7 @@ namespace Rutin.GameFramework.Factory
             _leaseVersion++;
 
             Transform cachedTransform = transform;
-            cachedTransform.SetParent(parent, true);
+            cachedTransform.SetParent(parent, false);
             cachedTransform.SetPositionAndRotation(position, rotation);
 
             for (int i = 0; i < _callbacks.Length; i++)

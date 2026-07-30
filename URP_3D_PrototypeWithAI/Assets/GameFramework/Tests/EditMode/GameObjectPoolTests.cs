@@ -136,5 +136,34 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(_pool.CountRented, Is.Zero);
             Assert.That(_pool.CountInactive, Is.EqualTo(1));
         }
+
+        [Test]
+        public void RentToScaledParent_DoesNotAccumulateScaleAcrossLeases()
+        {
+            GameObject scaledParent = new("Scaled Rent Parent");
+            scaledParent.transform.localScale = new Vector3(2f, 3f, 4f);
+            try
+            {
+                PooledInstance first = _pool.Rent(
+                    Vector3.zero,
+                    Quaternion.identity,
+                    scaledParent.transform);
+                Vector3 firstLeaseScale = first.transform.lossyScale;
+                Assert.That(_pool.Release(first), Is.True);
+
+                PooledInstance second = _pool.Rent(
+                    Vector3.zero,
+                    Quaternion.identity,
+                    scaledParent.transform);
+
+                Assert.That(second, Is.SameAs(first));
+                Assert.That(second.transform.lossyScale, Is.EqualTo(firstLeaseScale));
+                Assert.That(second.transform.localScale, Is.EqualTo(_prefab.transform.localScale));
+            }
+            finally
+            {
+                Object.DestroyImmediate(scaledParent);
+            }
+        }
     }
 }
