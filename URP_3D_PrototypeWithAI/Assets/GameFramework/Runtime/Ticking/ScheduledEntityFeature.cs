@@ -12,7 +12,8 @@ namespace Rutin.GameFramework.Ticking
     public abstract class ScheduledEntityFeature :
         EntityFeature,
         IGameTickable,
-        ITickSchedulerRegistrationObserver
+        ITickSchedulerRegistrationObserver,
+        IDefaultServicesObserver
     {
         private ITickScheduler _scheduler;
         private bool _registered;
@@ -85,7 +86,7 @@ namespace Rutin.GameFramework.Ticking
         protected sealed override void OnFeatureInitialized()
         {
             OnScheduledFeatureInitialized();
-            GameManagerHost.DefaultServicesChanged += HandleDefaultServicesChanged;
+            GameManagerHost.RegisterDefaultServicesObserver(this);
             ResolveDefaultScheduler();
         }
 
@@ -110,7 +111,7 @@ namespace Rutin.GameFramework.Ticking
             }
             finally
             {
-                GameManagerHost.DefaultServicesChanged -= HandleDefaultServicesChanged;
+                GameManagerHost.UnregisterDefaultServicesObserver(this);
                 _scheduler = null;
                 _missingSchedulerLogged = false;
                 _hasExplicitScheduler = false;
@@ -156,15 +157,39 @@ namespace Rutin.GameFramework.Ticking
             }
         }
 
-        private void HandleDefaultServicesChanged()
+        void IDefaultServicesObserver.OnDefaultServicesChanged()
         {
-            if (!IsFeatureActive || _registered || _hasExplicitScheduler)
+            if (_hasExplicitScheduler)
             {
                 return;
             }
 
-            ResolveDefaultScheduler();
-            RegisterWithScheduler(false);
+            ITickScheduler currentScheduler = null;
+            GameManagerHost host = GameManagerHost.Default;
+            if (host != null)
+            {
+                host.TryGetService(out currentScheduler);
+            }
+
+            if (ReferenceEquals(_scheduler, currentScheduler))
+            {
+                if (IsFeatureActive &&
+                    !_registered &&
+                    currentScheduler != null)
+                {
+                    RegisterWithScheduler(false);
+                }
+
+                return;
+            }
+
+            UnregisterFromScheduler();
+            _scheduler = currentScheduler;
+            _missingSchedulerLogged = false;
+            if (IsFeatureActive && _scheduler != null)
+            {
+                RegisterWithScheduler(false);
+            }
         }
 
         private void RegisterWithScheduler(bool logFailure = true)

@@ -174,6 +174,39 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_RejectsRemoteCommandsWhileInactive()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            player.SetActive(false);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        new Vector2(45f, 10f),
+                        true,
+                        1)),
+                Is.False);
+
+            player.SetActive(true);
+            scheduler.Tick(0.016f, 0d);
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.False);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(Vector2.right, Vector2.zero, false, 1)),
+                Is.True);
+        }
+
+        [Test]
         public void CommandFeature_RemoteTimeoutContinuesNeutralDispatch()
         {
             BudgetedTickScheduler scheduler = new();
@@ -254,13 +287,15 @@ namespace Rutin.GameFramework.Tests.PlayMode
             commands.RegisterConsumer(first);
             commands.RegisterConsumer(second);
             player.SetActive(true);
+            int firstResetCount = first.ResetCount;
+            int secondResetCount = second.ResetCount;
 
             scheduler.Tick(0.016f, 0d);
 
             Assert.That(first.CallCount, Is.EqualTo(1));
             Assert.That(second.CallCount, Is.Zero);
-            Assert.That(first.ResetCount, Is.EqualTo(1));
-            Assert.That(second.ResetCount, Is.EqualTo(1));
+            Assert.That(first.ResetCount, Is.EqualTo(firstResetCount + 1));
+            Assert.That(second.ResetCount, Is.EqualTo(secondResetCount + 1));
         }
 
         [Test]
@@ -398,6 +433,32 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             commands.UseDefaultTickScheduler();
             Assert.That(defaultScheduler.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ScheduledFeature_InactiveDuringDefaultReplacementUsesNewScheduler()
+        {
+            GameObject hostObject = CreateObject("Replacement Scheduler Host");
+            TickSchedulerService original =
+                hostObject.AddComponent<TickSchedulerService>();
+            GameObject player = CreateInactiveObject("Inactive Scheduled Player");
+            player.AddComponent<GameplayEntity>();
+            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            commands.SetCommandSource(source);
+            player.SetActive(true);
+            Assert.That(original.Count, Is.EqualTo(1));
+
+            player.SetActive(false);
+            Assert.That(original.Count, Is.Zero);
+            UnityEngine.Object.DestroyImmediate(original);
+            TickSchedulerService replacement =
+                hostObject.AddComponent<TickSchedulerService>();
+            Assert.That(replacement.Count, Is.Zero);
+
+            player.SetActive(true);
+
+            Assert.That(replacement.Count, Is.EqualTo(1));
         }
 
         [Test]
@@ -742,7 +803,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(allocated, Is.Zero);
         }
 
-        private void CreateCommandPlayer(
+        private GameObject CreateCommandPlayer(
             BudgetedTickScheduler scheduler,
             out ProbeCommandSource source,
             out PlayerCommandFeature commands,
@@ -757,6 +818,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             commands.SetCommandSource(source);
             commands.RegisterConsumer(consumer);
             player.SetActive(true);
+            return player;
         }
 
         private GameObject CreateMotorPlayer(

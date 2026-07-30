@@ -12,8 +12,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   population. Disabled tickables still consume one visit from the item budget.
 - `TickSchedulerService` quarantines only repeated failures, rate-limits exception logs,
   and exposes the session total through `TotalQuarantinedCount`.
-- Scheduled features log unexpected registration loss and automatically bind to a replacement
-  scheduler when the default host's service registry changes.
+- Scheduled features use an allocation-conscious dense observer registry to invalidate cached
+  default services and bind to a replacement scheduler, including while the feature is inactive.
 - Scheduler clear removes registrations before observer callbacks, so recovery callbacks can
   safely register a new scheduling session without mutating a live iteration.
 
@@ -42,7 +42,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
   on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
   values reject duplicate/out-of-order packets, and remote movement becomes neutral after the
-  configured command timeout while gravity and other neutral simulation continue.
+  configured command timeout while gravity and other neutral simulation continue. Commands
+  submitted while the feature is inactive are rejected instead of accumulating stale edges.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
@@ -96,10 +97,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 26 passed, 0 failed | 0.157 s test duration |
-| PlayMode | 37 passed, 0 failed | 0.898 s test duration |
+| EditMode | 26 passed, 0 failed | 0.223 s test duration |
+| PlayMode | 39 passed, 0 failed | 0.977 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 84.755 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

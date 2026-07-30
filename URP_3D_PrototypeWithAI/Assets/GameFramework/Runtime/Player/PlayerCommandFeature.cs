@@ -91,7 +91,9 @@ namespace Rutin.GameFramework.Player
         /// </summary>
         public bool SubmitCommand(PlayerCommand command)
         {
-            if (!simulationEnabled || !AcceptRemoteSequence(command.Sequence))
+            if (!IsFeatureActive ||
+                !simulationEnabled ||
+                !AcceptRemoteSequence(command.Sequence))
             {
                 return false;
             }
@@ -176,6 +178,12 @@ namespace Rutin.GameFramework.Player
             {
                 DiscoverCommandSource();
             }
+        }
+
+        protected override void OnScheduledFeatureActivated()
+        {
+            ClearCommandState(true);
+            ResetConsumers();
         }
 
         protected override void OnScheduledFeatureDeactivated()

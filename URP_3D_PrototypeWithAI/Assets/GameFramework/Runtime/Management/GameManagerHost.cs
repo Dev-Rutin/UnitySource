@@ -1,8 +1,14 @@
 using System.Collections.Generic;
+using Rutin.GameFramework.Utilities;
 using UnityEngine;
 
 namespace Rutin.GameFramework.Management
 {
+    public interface IDefaultServicesObserver
+    {
+        void OnDefaultServicesChanged();
+    }
+
     /// <summary>
     /// Scene-level composition root for manager services.
     /// </summary>
@@ -19,9 +25,15 @@ namespace Rutin.GameFramework.Management
         private bool _isShuttingDown;
         private bool _isRejectedDuplicate;
 
-        public static GameManagerHost Default { get; private set; }
+        private static readonly List<IDefaultServicesObserver>
+            DefaultServiceObservers = new(256);
+        private static readonly Dictionary<IDefaultServicesObserver, int>
+            DefaultServiceObserverIndices = new(
+                256,
+                ReferenceEqualityComparer<IDefaultServicesObserver>.Instance);
+        private static bool _isNotifyingDefaultServiceObservers;
 
-        internal static event System.Action DefaultServicesChanged;
+        public static GameManagerHost Default { get; private set; }
 
         public ServiceRegistry Services { get; } = new();
 
@@ -31,7 +43,9 @@ namespace Rutin.GameFramework.Management
         private static void ResetDefaultHost()
         {
             Default = null;
-            DefaultServicesChanged = null;
+            DefaultServiceObservers.Clear();
+            DefaultServiceObserverIndices.Clear();
+            _isNotifyingDefaultServiceObservers = false;
         }
 
         private void Awake()
@@ -135,6 +149,7 @@ namespace Rutin.GameFramework.Management
 
             if (ReferenceEquals(Default, this))
             {
+                NotifyDefaultServicesChanged();
                 Default = null;
             }
         }
@@ -143,6 +158,39 @@ namespace Rutin.GameFramework.Management
             where TContract : class
         {
             return Services.TryGet(out service);
+        }
+
+        internal static void RegisterDefaultServicesObserver(
+            IDefaultServicesObserver observer)
+        {
+            if (observer == null ||
+                DefaultServiceObserverIndices.ContainsKey(observer))
+            {
+                return;
+            }
+
+            int index = DefaultServiceObservers.Count;
+            DefaultServiceObservers.Add(observer);
+            DefaultServiceObserverIndices.Add(observer, index);
+        }
+
+        internal static void UnregisterDefaultServicesObserver(
+            IDefaultServicesObserver observer)
+        {
+            if (observer == null ||
+                !DefaultServiceObserverIndices.TryGetValue(observer, out int index))
+            {
+                return;
+            }
+
+            DefaultServiceObserverIndices.Remove(observer);
+            if (_isNotifyingDefaultServiceObservers)
+            {
+                DefaultServiceObservers[index] = null;
+                return;
+            }
+
+            RemoveDefaultServicesObserverAt(index);
         }
 
         internal void RegisterService(GameServiceBehaviour service)
@@ -320,9 +368,89 @@ namespace Rutin.GameFramework.Management
 
         private void NotifyDefaultServicesChanged()
         {
-            if (ReferenceEquals(Default, this))
+            if (!ReferenceEquals(Default, this))
             {
-                DefaultServicesChanged?.Invoke();
+                return;
+            }
+
+            int observerCount = DefaultServiceObservers.Count;
+            _isNotifyingDefaultServiceObservers = true;
+            try
+            {
+                for (int i = 0; i < observerCount; i++)
+                {
+                    IDefaultServicesObserver observer =
+                        DefaultServiceObservers[i];
+                    if (observer == null ||
+                        observer is Object unityObject && unityObject == null)
+                    {
+                        if (observer != null)
+                        {
+                            DefaultServiceObserverIndices.Remove(observer);
+                        }
+
+                        DefaultServiceObservers[i] = null;
+                        continue;
+                    }
+
+                    try
+                    {
+                        observer.OnDefaultServicesChanged();
+                    }
+                    catch (System.Exception exception)
+                    {
+                        Debug.LogException(exception, observer as Object);
+                    }
+                }
+            }
+            finally
+            {
+                _isNotifyingDefaultServiceObservers = false;
+                CompactDefaultServicesObservers();
+            }
+        }
+
+        private static void RemoveDefaultServicesObserverAt(int index)
+        {
+            int lastIndex = DefaultServiceObservers.Count - 1;
+            IDefaultServicesObserver last = DefaultServiceObservers[lastIndex];
+            DefaultServiceObservers.RemoveAt(lastIndex);
+            if (index == lastIndex)
+            {
+                return;
+            }
+
+            DefaultServiceObservers[index] = last;
+            if (last != null)
+            {
+                DefaultServiceObserverIndices[last] = index;
+            }
+        }
+
+        private static void CompactDefaultServicesObservers()
+        {
+            int writeIndex = 0;
+            for (int readIndex = 0;
+                 readIndex < DefaultServiceObservers.Count;
+                 readIndex++)
+            {
+                IDefaultServicesObserver observer =
+                    DefaultServiceObservers[readIndex];
+                if (observer == null)
+                {
+                    continue;
+                }
+
+                DefaultServiceObservers[writeIndex] = observer;
+                DefaultServiceObserverIndices[observer] = writeIndex;
+                writeIndex++;
+            }
+
+            if (writeIndex < DefaultServiceObservers.Count)
+            {
+                DefaultServiceObservers.RemoveRange(
+                    writeIndex,
+                    DefaultServiceObservers.Count - writeIndex);
             }
         }
     }
