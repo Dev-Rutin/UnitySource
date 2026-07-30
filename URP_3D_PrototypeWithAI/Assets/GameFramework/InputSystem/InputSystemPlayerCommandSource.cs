@@ -24,12 +24,16 @@ namespace Rutin.GameFramework.InputSystem
         private bool _ownsMoveEnable;
         private bool _ownsLookEnable;
         private bool _ownsJumpEnable;
+        private Vector2 _latestMove;
+        private Vector2 _pendingLook;
+        private bool _pendingJump;
         private uint _sequence;
 
         public bool IsInputAvailable => isActiveAndEnabled;
 
         private void OnEnable()
         {
+            ClearBufferedInput();
             if (!enableActionsWithComponent)
             {
                 return;
@@ -48,6 +52,44 @@ namespace Rutin.GameFramework.InputSystem
             _ownsMoveEnable = false;
             _ownsLookEnable = false;
             _ownsJumpEnable = false;
+            ClearBufferedInput();
+        }
+
+        private void Update()
+        {
+            BufferInputSample(
+                ReadVector2(moveAction),
+                ReadVector2(lookAction),
+                jumpAction != null &&
+                jumpAction.action != null &&
+                jumpAction.action.WasPressedThisFrame(),
+                Time.unscaledDeltaTime);
+        }
+
+        /// <summary>
+        /// Latches one render-frame sample. Exposed for custom Input System bridges and tests;
+        /// ReadCommand returns all accumulated look/jump data exactly once.
+        /// </summary>
+        public void BufferInputSample(
+            Vector2 move,
+            Vector2 look,
+            bool jumpPressed,
+            float sampleDeltaTime)
+        {
+            _latestMove = move;
+            look *= lookSensitivity;
+            if (lookValueIsAngularRate)
+            {
+                look *= Mathf.Max(0f, sampleDeltaTime);
+            }
+
+            if (invertLookY)
+            {
+                look.y = -look.y;
+            }
+
+            _pendingLook += look;
+            _pendingJump |= jumpPressed;
         }
 
         public PlayerCommand ReadCommand(float deltaTime)
@@ -57,30 +99,20 @@ namespace Rutin.GameFramework.InputSystem
                 return PlayerCommand.Neutral;
             }
 
-            Vector2 move = ReadVector2(moveAction);
-            Vector2 look = ReadVector2(lookAction) * lookSensitivity;
-            if (lookValueIsAngularRate)
-            {
-                look *= Mathf.Max(0f, deltaTime);
-            }
-
-            if (invertLookY)
-            {
-                look.y = -look.y;
-            }
-
-            bool jumpPressed =
-                jumpAction != null &&
-                jumpAction.action != null &&
-                jumpAction.action.WasPressedThisFrame();
-
             _sequence++;
             if (_sequence == 0)
             {
                 _sequence = 1;
             }
 
-            return new PlayerCommand(move, look, jumpPressed, _sequence);
+            PlayerCommand command = new(
+                _latestMove,
+                _pendingLook,
+                _pendingJump,
+                _sequence);
+            _pendingLook = Vector2.zero;
+            _pendingJump = false;
+            return command;
         }
 
         private static Vector2 ReadVector2(InputActionReference reference)
@@ -110,6 +142,13 @@ namespace Rutin.GameFramework.InputSystem
             {
                 reference.action.Disable();
             }
+        }
+
+        private void ClearBufferedInput()
+        {
+            _latestMove = Vector2.zero;
+            _pendingLook = Vector2.zero;
+            _pendingJump = false;
         }
     }
 }

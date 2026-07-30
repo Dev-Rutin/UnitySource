@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using Rutin.GameFramework.Core;
+using Rutin.GameFramework.InputSystem;
 using Rutin.GameFramework.Player;
 using Rutin.GameFramework.Ticking;
 using UnityEngine;
@@ -24,6 +25,37 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
         }
 
+        private sealed class ProbeCommandConsumer :
+            MonoBehaviour,
+            IPlayerCommandConsumer
+        {
+            public int CommandOrder { get; set; }
+
+            public int Marker { get; set; }
+
+            public List<int> OrderLog { get; set; }
+
+            public int CallCount { get; private set; }
+
+            public int ResetCount { get; private set; }
+
+            public PlayerCommand LastCommand { get; private set; }
+
+            public void ProcessPlayerCommand(
+                PlayerCommand command,
+                float deltaTime)
+            {
+                CallCount++;
+                LastCommand = command;
+                OrderLog?.Add(Marker);
+            }
+
+            public void ResetPlayerCommandState()
+            {
+                ResetCount++;
+            }
+        }
+
         private readonly List<GameObject> _createdObjects = new();
 
         [TearDown]
@@ -41,13 +73,14 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void CommandFeature_ClampsInputAndConsumesEdgesOnce()
+        public void CommandFeature_ClampsInputAndDispatchesEdges()
         {
             BudgetedTickScheduler scheduler = new();
             CreateCommandPlayer(
                 scheduler,
                 out ProbeCommandSource source,
-                out PlayerCommandFeature commands);
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
             source.Command = new PlayerCommand(
                 new Vector2(2f, 0f),
                 new Vector2(12f, -4f),
@@ -56,13 +89,108 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             scheduler.Tick(0.016f, 0d);
 
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.right));
-            Assert.That(commands.CurrentCommand.Sequence, Is.EqualTo(7));
-            Assert.That(commands.ConsumeJumpPressed(), Is.True);
-            Assert.That(commands.ConsumeJumpPressed(), Is.False);
-            Assert.That(commands.TryConsumeLookDelta(out Vector2 look), Is.True);
-            Assert.That(look, Is.EqualTo(new Vector2(12f, -4f)));
-            Assert.That(commands.TryConsumeLookDelta(out _), Is.False);
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.right));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(new Vector2(12f, -4f)));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.True);
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(7));
+            Assert.That(commands.CurrentCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(commands.CurrentCommand.JumpPressed, Is.False);
+        }
+
+        [Test]
+        public void CommandFeature_DispatchesConsumersInDeclaredOrder()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Ordered Command Player");
+            player.AddComponent<GameplayEntity>();
+            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            ProbeCommandConsumer later = player.AddComponent<ProbeCommandConsumer>();
+            ProbeCommandConsumer earlier = player.AddComponent<ProbeCommandConsumer>();
+            List<int> order = new();
+            later.CommandOrder = 100;
+            later.Marker = 100;
+            later.OrderLog = order;
+            earlier.CommandOrder = -100;
+            earlier.Marker = -100;
+            earlier.OrderLog = order;
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(later);
+            commands.RegisterConsumer(earlier);
+            player.SetActive(true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(order, Is.EqualTo(new[] { -100, 100 }));
+        }
+
+        [Test]
+        public void CommandFeature_RemoteCommandsLatchEdgesAndRejectOldSequences()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.left,
+                        new Vector2(2f, 3f),
+                        true,
+                        10)),
+                Is.True);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.right,
+                        new Vector2(5f, -1f),
+                        false,
+                        11)),
+                Is.True);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(Vector2.down, Vector2.one, true, 11)),
+                Is.False);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(Vector2.down, Vector2.one, true, 9)),
+                Is.False);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.right));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(new Vector2(7f, 2f)));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.True);
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(11));
+        }
+
+        [Test]
+        public void CommandFeature_RemoteTimeoutDispatchesNeutralOnce()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            commands.SubmitCommand(
+                new PlayerCommand(Vector2.up, Vector2.zero, false, 1));
+
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
+
+            scheduler.Tick(0.2f, 0d);
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.CallCount, Is.EqualTo(2));
+
+            scheduler.Tick(0.2f, 0d);
+            Assert.That(consumer.CallCount, Is.EqualTo(2));
         }
 
         [Test]
@@ -72,21 +200,22 @@ namespace Rutin.GameFramework.Tests.PlayMode
             CreateCommandPlayer(
                 scheduler,
                 out ProbeCommandSource source,
-                out PlayerCommandFeature commands);
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
             source.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
             scheduler.Tick(0.016f, 0d);
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.up));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
 
             commands.SetLocallyControlled(false);
             source.Command = new PlayerCommand(Vector2.left, Vector2.zero, false);
             scheduler.Tick(0.016f, 0d);
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
 
             commands.SubmitCommand(
                 new PlayerCommand(Vector2.right, Vector2.zero, false, 19));
             scheduler.Tick(0.016f, 0d);
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.right));
-            Assert.That(commands.CurrentCommand.Sequence, Is.EqualTo(19));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.right));
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(19));
         }
 
         [Test]
@@ -96,83 +225,196 @@ namespace Rutin.GameFramework.Tests.PlayMode
             CreateCommandPlayer(
                 scheduler,
                 out ProbeCommandSource source,
-                out PlayerCommandFeature commands);
+                out _,
+                out ProbeCommandConsumer consumer);
             source.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
             scheduler.Tick(0.016f, 0d);
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.up));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
 
             source.IsInputAvailable = false;
             scheduler.Tick(0.016f, 0d);
 
-            Assert.That(commands.CurrentCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
         }
 
         [Test]
-        public void Motor_MovesAndTracksEntityActivationWithoutIndependentUpdate()
+        public void ScheduledFeature_ReRegistersAfterSchedulerClear()
         {
             BudgetedTickScheduler scheduler = new();
-            GameObject player = CreateInactiveObject("Motor Player");
-            CharacterController controller = player.AddComponent<CharacterController>();
-            player.AddComponent<GameplayEntity>();
-            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
-            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
-            PlayerCharacterMotorFeature motor =
-                player.AddComponent<PlayerCharacterMotorFeature>();
-            commands.SetTickScheduler(scheduler);
-            motor.SetTickScheduler(scheduler);
-            commands.SetCommandSource(source);
-            source.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
-            player.SetActive(true);
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out _);
+            Assert.That(scheduler.Count, Is.EqualTo(1));
 
-            Assert.That(scheduler.Count, Is.EqualTo(2));
+            scheduler.Clear();
+            Assert.That(scheduler.Count, Is.Zero);
+
+            commands.SetTickScheduler(scheduler);
+            Assert.That(scheduler.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void BudgetedScheduler_ProcessesEachPlayerStackAtomically()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateMotorPlayer(
+                scheduler,
+                "First Player",
+                out ProbeCommandSource firstSource,
+                out Transform firstTransform);
+            CreateMotorPlayer(
+                scheduler,
+                "Second Player",
+                out ProbeCommandSource secondSource,
+                out Transform secondTransform);
+            firstSource.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
+            secondSource.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
+
+            scheduler.Tick(0.1f, 0d, 1);
+            Assert.That(firstTransform.position.z, Is.GreaterThan(0f));
+            Assert.That(secondTransform.position.z, Is.EqualTo(0f).Within(0.0001f));
+
+            scheduler.Tick(0.1f, 0d, 1);
+            Assert.That(secondTransform.position.z, Is.GreaterThan(0f));
+        }
+
+        [Test]
+        public void Motor_UsesFixedStepsAndTracksEntityActivation()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "Motor Player",
+                out ProbeCommandSource source,
+                out Transform playerTransform);
+            source.Command = new PlayerCommand(Vector2.up, Vector2.zero, false);
+
+            Assert.That(scheduler.Count, Is.EqualTo(1));
             scheduler.Tick(0.1f, 0d);
 
-            Assert.That(controller.transform.position.z, Is.GreaterThan(0f));
+            Assert.That(playerTransform.position.z, Is.GreaterThan(0f));
             player.SetActive(false);
             Assert.That(scheduler.Count, Is.Zero);
             player.SetActive(true);
-            Assert.That(scheduler.Count, Is.EqualTo(2));
+            Assert.That(scheduler.Count, Is.EqualTo(1));
         }
 
         [Test]
-        public void LookFeature_AppliesSubmittedDeltaOnlyOnce()
+        public void Motor_FixedStepProducesSameResultAcrossTickPartitions()
+        {
+            BudgetedTickScheduler singleBatchScheduler = new();
+            CreateMotorPlayer(
+                singleBatchScheduler,
+                "Single Batch Player",
+                out ProbeCommandSource singleBatchSource,
+                out Transform singleBatchTransform);
+            singleBatchSource.Command =
+                new PlayerCommand(Vector2.up, Vector2.zero, false);
+
+            BudgetedTickScheduler splitBatchScheduler = new();
+            GameObject splitPlayer = CreateMotorPlayer(
+                splitBatchScheduler,
+                "Split Batch Player",
+                out ProbeCommandSource splitBatchSource,
+                out Transform splitBatchTransform);
+            splitPlayer.transform.position = Vector3.right * 10f;
+            splitBatchSource.Command =
+                new PlayerCommand(Vector2.up, Vector2.zero, false);
+
+            singleBatchScheduler.Tick(0.1f, 0d);
+            splitBatchScheduler.Tick(0.05f, 0d);
+            splitBatchScheduler.Tick(0.05f, 0d);
+
+            Assert.That(
+                splitBatchTransform.position.z,
+                Is.EqualTo(singleBatchTransform.position.z).Within(0.0001f));
+            Assert.That(
+                splitBatchTransform.position.y,
+                Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+        }
+
+        [Test]
+        public void LookFeature_PreservesRigBaseRotationsAndSharesMovementReference()
         {
             BudgetedTickScheduler scheduler = new();
             GameObject player = CreateInactiveObject("Look Player");
+            player.AddComponent<CharacterController>();
             player.AddComponent<GameplayEntity>();
             PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            PlayerCharacterMotorFeature motor =
+                player.AddComponent<PlayerCharacterMotorFeature>();
             PlayerLookFeature lookFeature = player.AddComponent<PlayerLookFeature>();
+            GameObject yawObject = CreateObject("Yaw Root");
+            yawObject.transform.SetParent(player.transform, false);
             GameObject pitchObject = CreateObject("Pitch Pivot");
-            pitchObject.transform.SetParent(player.transform, false);
+            pitchObject.transform.SetParent(yawObject.transform, false);
+            Quaternion baseYaw = Quaternion.Euler(10f, 20f, 5f);
+            Quaternion basePitch = Quaternion.Euler(3f, 0f, 7f);
+            yawObject.transform.localRotation = baseYaw;
+            pitchObject.transform.localRotation = basePitch;
 
             commands.SetTickScheduler(scheduler);
-            lookFeature.SetTickScheduler(scheduler);
             commands.SetLocallyControlled(false);
-            lookFeature.SetViewTransforms(player.transform, pitchObject.transform);
+            lookFeature.SetViewTransforms(yawObject.transform, pitchObject.transform);
             player.SetActive(true);
             commands.SubmitCommand(
                 new PlayerCommand(Vector2.zero, new Vector2(30f, 10f), false));
 
             scheduler.Tick(0.016f, 0d);
-            Assert.That(lookFeature.Yaw, Is.EqualTo(30f).Within(0.001f));
-            Assert.That(lookFeature.Pitch, Is.EqualTo(-10f).Within(0.001f));
 
-            scheduler.Tick(0.016f, 0d);
-            Assert.That(lookFeature.Yaw, Is.EqualTo(30f).Within(0.001f));
-            Assert.That(lookFeature.Pitch, Is.EqualTo(-10f).Within(0.001f));
+            Quaternion expectedYaw =
+                baseYaw * Quaternion.AngleAxis(30f, Vector3.up);
+            Quaternion expectedPitch =
+                basePitch * Quaternion.AngleAxis(-10f, Vector3.right);
+            Assert.That(
+                Quaternion.Angle(yawObject.transform.localRotation, expectedYaw),
+                Is.LessThan(0.001f));
+            Assert.That(
+                Quaternion.Angle(pitchObject.transform.localRotation, expectedPitch),
+                Is.LessThan(0.001f));
+            Assert.That(motor.MovementSpace, Is.SameAs(yawObject.transform));
         }
 
         [Test]
-        public void CommandAndLookTick_DoesNotAllocateManagedMemory()
+        public void InputSystemSource_LatchesFrameEdgesUntilSchedulerRead()
+        {
+            GameObject inputObject = CreateObject("Input Source");
+            InputSystemPlayerCommandSource source =
+                inputObject.AddComponent<InputSystemPlayerCommandSource>();
+            source.BufferInputSample(
+                Vector2.left,
+                new Vector2(2f, 3f),
+                true,
+                0.016f);
+            source.BufferInputSample(
+                Vector2.right,
+                new Vector2(5f, -1f),
+                false,
+                0.016f);
+
+            PlayerCommand first = source.ReadCommand(0.032f);
+            PlayerCommand second = source.ReadCommand(0.016f);
+
+            Assert.That(first.Move, Is.EqualTo(Vector2.right));
+            Assert.That(first.Look, Is.EqualTo(new Vector2(7f, 2f)));
+            Assert.That(first.JumpPressed, Is.True);
+            Assert.That(second.Move, Is.EqualTo(Vector2.right));
+            Assert.That(second.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(second.JumpPressed, Is.False);
+        }
+
+        [Test]
+        public void CommandAndConsumers_DoesNotAllocateManagedMemory()
         {
             BudgetedTickScheduler scheduler = new();
             GameObject player = CreateInactiveObject("Allocation Player");
             player.AddComponent<GameplayEntity>();
             ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
             PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
-            PlayerLookFeature lookFeature = player.AddComponent<PlayerLookFeature>();
+            player.AddComponent<PlayerLookFeature>();
             commands.SetTickScheduler(scheduler);
-            lookFeature.SetTickScheduler(scheduler);
             commands.SetCommandSource(source);
             source.Command = new PlayerCommand(
                 Vector2.up,
@@ -198,15 +440,37 @@ namespace Rutin.GameFramework.Tests.PlayMode
         private void CreateCommandPlayer(
             BudgetedTickScheduler scheduler,
             out ProbeCommandSource source,
-            out PlayerCommandFeature commands)
+            out PlayerCommandFeature commands,
+            out ProbeCommandConsumer consumer)
         {
             GameObject player = CreateInactiveObject("Command Player");
             player.AddComponent<GameplayEntity>();
             source = player.AddComponent<ProbeCommandSource>();
             commands = player.AddComponent<PlayerCommandFeature>();
+            consumer = player.AddComponent<ProbeCommandConsumer>();
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(consumer);
+            player.SetActive(true);
+        }
+
+        private GameObject CreateMotorPlayer(
+            BudgetedTickScheduler scheduler,
+            string name,
+            out ProbeCommandSource source,
+            out Transform playerTransform)
+        {
+            GameObject player = CreateInactiveObject(name);
+            player.AddComponent<CharacterController>();
+            player.AddComponent<GameplayEntity>();
+            source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            player.AddComponent<PlayerCharacterMotorFeature>();
             commands.SetTickScheduler(scheduler);
             commands.SetCommandSource(source);
             player.SetActive(true);
+            playerTransform = player.transform;
+            return player;
         }
 
         private GameObject CreateInactiveObject(string name)

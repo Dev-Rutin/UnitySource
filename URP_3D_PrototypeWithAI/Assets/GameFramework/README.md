@@ -26,18 +26,27 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Add `CharacterController`, `GameplayEntity`, `PlayerCommandFeature`, and
   `PlayerCharacterMotorFeature` to the player object.
 - Add `PlayerLookFeature` when the entity owns yaw/pitch transforms. Look commands are angular
-  deltas in degrees and are consumed once; jump presses are also consumed once.
+  deltas in degrees and are latched until consumed; jump presses are also latched.
 - For local control, add `InputSystemPlayerCommandSource` from the separate
   `Rutin.GameFramework.InputSystem` assembly and assign move, look, and jump actions.
   `PlayerCommandFeature` discovers the source once during initialization. Enable
   `lookValueIsAngularRate` for stick-style look actions; mouse-delta actions should leave it off.
+  This adapter uses one local `Update()` to latch frame-only Input System edges and deltas so a
+  budget-delayed simulation tick cannot lose them.
 - For remote/server control, call `SetLocallyControlled(false)` and submit immutable
   `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
-  on the Unity Input System and can use network, replay, or AI command sources.
+  on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
+  values reject duplicate/out-of-order packets, and remote movement becomes neutral after the
+  configured command timeout.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
-  clear held input and reset motor velocity on the next simulated command.
-- PC features inherit `ScheduledEntityFeature`; they never create individual `Update()` loops.
-  Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
+  clear held input and reset all command consumers.
+- Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
+  to sorted motor/view consumers, making each player stack atomic even when the global scheduler
+  is budget-limited or swap-removes other entities. The motor integrates accumulated time using
+  bounded fixed substeps.
+- `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
+  explicit movement space is configured, keeping view and locomotion axes aligned.
+- Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
 
 ## Factory and pooling
 
@@ -76,10 +85,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 22 passed, 0 failed | 0.153 s test duration |
-| PlayMode | 21 passed, 0 failed | 0.930 s test duration |
+| EditMode | 25 passed, 0 failed | 0.160 s test duration |
+| PlayMode | 28 passed, 0 failed | 0.994 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 89.375 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 110.147 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

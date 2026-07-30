@@ -41,4 +41,17 @@ namespace Rutin.GameFramework.Player
 
         PlayerCommand ReadCommand(float deltaTime);
     }
+
+    /// <summary>
+    /// Deterministic consumer invoked by PlayerCommandFeature after input production.
+    /// Lower order values run first.
+    /// </summary>
+    public interface IPlayerCommandConsumer
+    {
+        int CommandOrder { get; }
+
+        void ProcessPlayerCommand(PlayerCommand command, float deltaTime);
+
+        void ResetPlayerCommandState();
+    }
 }

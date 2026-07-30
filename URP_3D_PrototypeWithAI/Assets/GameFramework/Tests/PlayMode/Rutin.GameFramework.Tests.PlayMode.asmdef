@@ -2,7 +2,8 @@
   "name": "Rutin.GameFramework.Tests.PlayMode",
   "rootNamespace": "Rutin.GameFramework.Tests.PlayMode",
   "references": [
-    "Rutin.GameFramework.Runtime"
+    "Rutin.GameFramework.Runtime",
+    "Rutin.GameFramework.InputSystem"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

@@ -1,12 +1,14 @@
+using System;
 using System.Collections.Generic;
+using Rutin.GameFramework.Core;
 using Rutin.GameFramework.Ticking;
 using UnityEngine;
 
 namespace Rutin.GameFramework.Player
 {
     /// <summary>
-    /// Ownership-aware command buffer. Local sources are polled by the central scheduler;
-    /// remote/server commands can be submitted directly without enabling local control.
+    /// Ownership-aware command producer and dispatcher. This is the only scheduled component
+    /// in a player stack; motor, view, and custom consumers are invoked in deterministic order.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerCommandFeature : ScheduledEntityFeature
@@ -14,35 +16,45 @@ namespace Rutin.GameFramework.Player
         [SerializeField] private bool locallyControlled = true;
         [SerializeField] private bool simulationEnabled = true;
 
+        [Min(0.01f)]
+        [SerializeField] private float remoteCommandTimeout = 0.25f;
+
         private readonly List<MonoBehaviour> _sourceDiscoveryBuffer = new(4);
+        private readonly List<IPlayerCommandConsumer> _consumers = new(4);
         private IPlayerCommandSource _source;
-        private PlayerCommand _currentCommand;
-        private uint _commandVersion;
-        private uint _consumedJumpVersion;
-        private uint _consumedLookVersion;
-        private uint _controlRevision;
+        private Vector2 _moveState;
+        private Vector2 _pendingLook;
+        private bool _pendingJump;
+        private bool _hasRemoteCommand;
+        private bool _hasAcceptedSequence;
+        private uint _lastAcceptedSequence;
+        private uint _currentSequence;
+        private float _remoteCommandAge;
 
         public override int InitializationOrder => -200;
 
         public override bool IsTickEnabled =>
             IsFeatureActive &&
             simulationEnabled &&
-            locallyControlled &&
-            _source != null;
+            (locallyControlled ? _source != null : _hasRemoteCommand);
 
         public bool IsLocallyControlled => locallyControlled;
 
         public bool IsSimulationEnabled => simulationEnabled;
 
-        public PlayerCommand CurrentCommand => _currentCommand;
-
-        public uint ControlRevision => _controlRevision;
+        public PlayerCommand CurrentCommand =>
+            new(_moveState, _pendingLook, _pendingJump, _currentSequence);
 
         public void SetCommandSource(IPlayerCommandSource source)
         {
+            if (ReferenceEquals(_source, source))
+            {
+                return;
+            }
+
             _source = source;
-            AdvanceControlRevision();
-            ClearCommand();
+            ClearCommandState(true);
+            ResetConsumers();
         }
 
         public void SetLocallyControlled(bool value)
@@ -53,8 +65,8 @@ namespace Rutin.GameFramework.Player
             }
 
             locallyControlled = value;
-            AdvanceControlRevision();
-            ClearCommand();
+            ClearCommandState(true);
+            ResetConsumers();
         }
 
         public void SetSimulationEnabled(bool value)
@@ -65,44 +77,58 @@ namespace Rutin.GameFramework.Player
             }
 
             simulationEnabled = value;
-            AdvanceControlRevision();
-            if (!simulationEnabled)
-            {
-                ClearCommand();
-            }
+            ClearCommandState(true);
+            ResetConsumers();
         }
 
         /// <summary>
-        /// Supplies a replay, server-authoritative, or remote-owned command.
+        /// Supplies a replay, server-authoritative, or remote-owned command. Non-zero sequence
+        /// values must be newer than the last accepted sequence; zero opts out of ordering.
         /// </summary>
-        public void SubmitCommand(PlayerCommand command)
+        public bool SubmitCommand(PlayerCommand command)
         {
-            AcceptCommand(command);
-        }
-
-        public bool ConsumeJumpPressed()
-        {
-            if (!_currentCommand.JumpPressed ||
-                _consumedJumpVersion == _commandVersion)
+            if (!simulationEnabled || !AcceptRemoteSequence(command.Sequence))
             {
                 return false;
             }
 
-            _consumedJumpVersion = _commandVersion;
+            AcceptCommand(command);
+            _hasRemoteCommand = true;
+            _remoteCommandAge = 0f;
             return true;
         }
 
-        public bool TryConsumeLookDelta(out Vector2 look)
+        public bool RegisterConsumer(IPlayerCommandConsumer consumer)
         {
-            if (_consumedLookVersion == _commandVersion)
+            if (consumer == null || IndexOfConsumer(consumer) >= 0)
             {
-                look = Vector2.zero;
                 return false;
             }
 
-            _consumedLookVersion = _commandVersion;
-            look = _currentCommand.Look;
-            return look.sqrMagnitude > 0f;
+            int insertIndex = _consumers.Count;
+            for (int i = 0; i < _consumers.Count; i++)
+            {
+                if (_consumers[i].CommandOrder > consumer.CommandOrder)
+                {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            _consumers.Insert(insertIndex, consumer);
+            return true;
+        }
+
+        public bool UnregisterConsumer(IPlayerCommandConsumer consumer)
+        {
+            int index = IndexOfConsumer(consumer);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            _consumers.RemoveAt(index);
+            return true;
         }
 
         public override void Tick(float deltaTime)
@@ -112,23 +138,56 @@ namespace Rutin.GameFramework.Player
                 return;
             }
 
-            if (_source.IsInputAvailable)
+            float elapsed = Mathf.Max(0f, deltaTime);
+            if (locallyControlled)
             {
-                AcceptCommand(_source.ReadCommand(deltaTime));
+                if (_source.IsInputAvailable)
+                {
+                    AcceptCommand(_source.ReadCommand(elapsed));
+                }
+                else
+                {
+                    ClearCommandState(false);
+                }
             }
             else
             {
-                ClearCommand();
+                _remoteCommandAge += elapsed;
+                if (_remoteCommandAge >= Mathf.Max(0.01f, remoteCommandTimeout))
+                {
+                    _moveState = Vector2.zero;
+                    _hasRemoteCommand = false;
+                }
             }
+
+            DispatchCommand(elapsed);
         }
 
         protected override void OnScheduledFeatureInitialized()
         {
-            if (_source != null)
+            if (_source == null)
             {
-                return;
+                DiscoverCommandSource();
             }
+        }
 
+        protected override void OnScheduledFeatureDeactivated()
+        {
+            ClearCommandState(true);
+            ResetConsumers();
+        }
+
+        protected override void OnScheduledFeatureShutdown()
+        {
+            ClearCommandState(true);
+            ResetConsumers();
+            _source = null;
+            _sourceDiscoveryBuffer.Clear();
+            _consumers.Clear();
+        }
+
+        private void DiscoverCommandSource()
+        {
             _sourceDiscoveryBuffer.Clear();
             GetComponents(_sourceDiscoveryBuffer);
             for (int i = 0; i < _sourceDiscoveryBuffer.Count; i++)
@@ -144,49 +203,117 @@ namespace Rutin.GameFramework.Player
             _sourceDiscoveryBuffer.Clear();
         }
 
-        protected override void OnScheduledFeatureDeactivated()
+        private bool AcceptRemoteSequence(uint sequence)
         {
-            ClearCommand();
-        }
+            if (sequence == 0)
+            {
+                return true;
+            }
 
-        protected override void OnScheduledFeatureShutdown()
-        {
-            ClearCommand();
-            _source = null;
-            _sourceDiscoveryBuffer.Clear();
+            if (_hasAcceptedSequence &&
+                unchecked((int)(sequence - _lastAcceptedSequence)) <= 0)
+            {
+                return false;
+            }
+
+            _hasAcceptedSequence = true;
+            _lastAcceptedSequence = sequence;
+            return true;
         }
 
         private void AcceptCommand(PlayerCommand command)
         {
-            if (!simulationEnabled)
-            {
-                return;
-            }
+            _moveState = command.Move;
+            _pendingLook += command.Look;
+            _pendingJump |= command.JumpPressed;
+            _currentSequence = command.Sequence;
+        }
 
-            _currentCommand = command;
-            _commandVersion++;
-            if (_commandVersion == 0)
+        private void DispatchCommand(float deltaTime)
+        {
+            PlayerCommand command = new(
+                _moveState,
+                _pendingLook,
+                _pendingJump,
+                _currentSequence);
+            _pendingLook = Vector2.zero;
+            _pendingJump = false;
+
+            for (int i = 0; i < _consumers.Count; i++)
             {
-                _commandVersion = 1;
-                _consumedJumpVersion = 0;
+                IPlayerCommandConsumer consumer = _consumers[i];
+                if (consumer is UnityEngine.Object unityObject && unityObject == null)
+                {
+                    _consumers.RemoveAt(i--);
+                    continue;
+                }
+
+                if (consumer is EntityFeature feature && !feature.IsFeatureActive)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    consumer.ProcessPlayerCommand(command, deltaTime);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, consumer as UnityEngine.Object);
+                    _consumers.RemoveAt(i--);
+                }
             }
         }
 
-        private void ClearCommand()
+        private void ResetConsumers()
         {
-            _currentCommand = PlayerCommand.Neutral;
-            _commandVersion++;
-            _consumedJumpVersion = _commandVersion;
-            _consumedLookVersion = _commandVersion;
+            for (int i = 0; i < _consumers.Count; i++)
+            {
+                IPlayerCommandConsumer consumer = _consumers[i];
+                if (consumer is UnityEngine.Object unityObject && unityObject == null)
+                {
+                    _consumers.RemoveAt(i--);
+                    continue;
+                }
+
+                try
+                {
+                    consumer.ResetPlayerCommandState();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, consumer as UnityEngine.Object);
+                    _consumers.RemoveAt(i--);
+                }
+            }
         }
 
-        private void AdvanceControlRevision()
+        private void ClearCommandState(bool resetSequence)
         {
-            _controlRevision++;
-            if (_controlRevision == 0)
+            _moveState = Vector2.zero;
+            _pendingLook = Vector2.zero;
+            _pendingJump = false;
+            _hasRemoteCommand = false;
+            _remoteCommandAge = 0f;
+            _currentSequence = 0;
+            if (resetSequence)
             {
-                _controlRevision = 1;
+                _hasAcceptedSequence = false;
+                _lastAcceptedSequence = 0;
             }
+        }
+
+        private int IndexOfConsumer(IPlayerCommandConsumer consumer)
+        {
+            for (int i = 0; i < _consumers.Count; i++)
+            {
+                if (ReferenceEquals(_consumers[i], consumer))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
     }
 }

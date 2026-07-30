@@ -109,6 +109,13 @@ namespace Rutin.GameFramework.Ticking
 
         public bool Unregister(IGameTickable tickable)
         {
+            return Unregister(tickable, TickUnregistrationReason.Explicit);
+        }
+
+        private bool Unregister(
+            IGameTickable tickable,
+            TickUnregistrationReason reason)
+        {
             if (tickable == null || !_indices.TryGetValue(tickable, out int index))
             {
                 return false;
@@ -147,6 +154,11 @@ namespace Rutin.GameFramework.Ticking
             if (_cursor < 0 || _cursor >= _tickables.Count)
             {
                 _cursor = 0;
+            }
+
+            if (tickable is ITickSchedulerRegistrationObserver observer)
+            {
+                NotifyUnregistered(observer, reason);
             }
 
             return true;
@@ -301,6 +313,16 @@ namespace Rutin.GameFramework.Ticking
 
         public void Clear()
         {
+            for (int i = 0; i < _tickables.Count; i++)
+            {
+                if (_tickables[i] is ITickSchedulerRegistrationObserver observer)
+                {
+                    NotifyUnregistered(
+                        observer,
+                        TickUnregistrationReason.SchedulerCleared);
+                }
+            }
+
             _tickables.Clear();
             _lastVisitedRounds.Clear();
             _lastTickTimes.Clear();
@@ -335,6 +357,20 @@ namespace Rutin.GameFramework.Ticking
             return elapsedTicks * 1000d / Stopwatch.Frequency;
         }
 
+        private void NotifyUnregistered(
+            ITickSchedulerRegistrationObserver observer,
+            TickUnregistrationReason reason)
+        {
+            try
+            {
+                observer.OnTickSchedulerUnregistered(this, reason);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, observer as Object);
+            }
+        }
+
         private bool HandleTickFailure(
             IGameTickable tickable,
             Exception exception)
@@ -359,7 +395,7 @@ namespace Rutin.GameFramework.Ticking
             }
 
             Debug.LogException(exception, tickable as Object);
-            Unregister(tickable);
+            Unregister(tickable, TickUnregistrationReason.Quarantined);
             return true;
         }
 

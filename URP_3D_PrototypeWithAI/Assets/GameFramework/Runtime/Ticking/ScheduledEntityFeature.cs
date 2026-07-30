@@ -9,7 +9,10 @@ namespace Rutin.GameFramework.Ticking
     /// A scheduler can be injected for tests, server worlds, or multi-world clients; otherwise
     /// the feature resolves the default host once during initialization.
     /// </summary>
-    public abstract class ScheduledEntityFeature : EntityFeature, IGameTickable
+    public abstract class ScheduledEntityFeature :
+        EntityFeature,
+        IGameTickable,
+        ITickSchedulerRegistrationObserver
     {
         private ITickScheduler _scheduler;
         private bool _registered;
@@ -18,6 +21,17 @@ namespace Rutin.GameFramework.Ticking
         public abstract bool IsTickEnabled { get; }
 
         public abstract void Tick(float deltaTime);
+
+        public void OnTickSchedulerUnregistered(
+            ITickScheduler scheduler,
+            TickUnregistrationReason reason)
+        {
+            _registered = false;
+            if (reason == TickUnregistrationReason.SchedulerCleared)
+            {
+                _scheduler = null;
+            }
+        }
 
         public void SetTickScheduler(ITickScheduler scheduler)
         {
