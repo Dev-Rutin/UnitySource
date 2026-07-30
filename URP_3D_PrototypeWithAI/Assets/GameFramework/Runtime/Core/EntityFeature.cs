@@ -103,10 +103,42 @@ namespace Rutin.GameFramework.Core
                 return;
             }
 
-            SetFeatureActive(false);
-            OnFeatureShutdown();
-            _initialized = false;
-            _owner = null;
+            Exception firstException = null;
+            try
+            {
+                SetFeatureActive(false);
+            }
+            catch (Exception exception)
+            {
+                firstException = exception;
+            }
+
+            try
+            {
+                OnFeatureShutdown();
+            }
+            catch (Exception exception)
+            {
+                if (firstException == null)
+                {
+                    firstException = exception;
+                }
+                else
+                {
+                    Debug.LogException(exception, this);
+                }
+            }
+            finally
+            {
+                _active = false;
+                _initialized = false;
+                _owner = null;
+            }
+
+            if (firstException != null)
+            {
+                throw firstException;
+            }
         }
 
         private void RollbackFailedBind()

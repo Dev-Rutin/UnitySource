@@ -73,7 +73,7 @@ namespace Rutin.GameFramework.Core
             _isShuttingDown = true;
             for (int i = _features.Count - 1; i >= 0; i--)
             {
-                _features[i]?.Unbind();
+                TryUnbindFeature(_features[i]);
             }
 
             _features.Clear();
@@ -131,8 +131,14 @@ namespace Rutin.GameFramework.Core
                 return;
             }
 
-            feature.Unbind();
-            _features.RemoveAt(index);
+            try
+            {
+                TryUnbindFeature(feature);
+            }
+            finally
+            {
+                _features.RemoveAt(index);
+            }
         }
 
         internal void NotifyFeatureEnabled(EntityFeature feature)
@@ -196,6 +202,23 @@ namespace Rutin.GameFramework.Core
             {
                 Debug.LogException(exception, feature);
                 return false;
+            }
+        }
+
+        private static void TryUnbindFeature(EntityFeature feature)
+        {
+            if (feature == null)
+            {
+                return;
+            }
+
+            try
+            {
+                feature.Unbind();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, feature);
             }
         }
     }

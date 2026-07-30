@@ -1,11 +1,25 @@
 using NUnit.Framework;
 using Rutin.GameFramework.Factory;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Rutin.GameFramework.Tests.EditMode
 {
     public sealed class GameObjectPoolTests
     {
+        private sealed class ThrowingPoolable : MonoBehaviour, IPoolable
+        {
+            public void OnRentFromPool()
+            {
+                throw new System.InvalidOperationException("Rent callback failure");
+            }
+
+            public void OnReturnToPool()
+            {
+                throw new System.InvalidOperationException("Return callback failure");
+            }
+        }
+
         private GameObject _prefab;
         private GameObject _rootObject;
         private GameObjectPool _pool;
@@ -97,6 +111,30 @@ namespace Rutin.GameFramework.Tests.EditMode
                 _pool.TryRent(out PooledInstance replacement, Vector3.zero, Quaternion.identity),
                 Is.True);
             Assert.That(replacement, Is.Not.Null);
+        }
+
+        [Test]
+        public void CallbackExceptions_AreIsolatedWithoutLeakingPoolCapacity()
+        {
+            _pool.Dispose();
+            _pool = null;
+            _prefab.AddComponent<ThrowingPoolable>();
+            _pool = new GameObjectPool(_prefab, _rootObject.transform, 1, 1);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Rent callback failure"));
+            Assert.That(
+                _pool.TryRent(out PooledInstance instance, Vector3.zero, Quaternion.identity),
+                Is.True);
+            Assert.That(_pool.CountRented, Is.EqualTo(1));
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Return callback failure"));
+            Assert.That(_pool.Release(instance), Is.True);
+            Assert.That(_pool.CountRented, Is.Zero);
+            Assert.That(_pool.CountInactive, Is.EqualTo(1));
         }
     }
 }

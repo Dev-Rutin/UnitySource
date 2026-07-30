@@ -165,5 +165,20 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(first.LastDeltaTime, Is.EqualTo(0.1f).Within(0.0001f));
             Assert.That(delayed.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
         }
+
+        [Test]
+        public void Tick_ClampsAccumulatedDeltaTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ProbeTickable first = new();
+            ProbeTickable delayed = new();
+            scheduler.Register(first);
+            scheduler.Register(delayed);
+
+            scheduler.Tick(0.2f, 0d, 1, 0.25f);
+            scheduler.Tick(0.2f, 0d, 1, 0.25f);
+
+            Assert.That(delayed.LastDeltaTime, Is.EqualTo(0.25f).Within(0.0001f));
+        }
     }
 }

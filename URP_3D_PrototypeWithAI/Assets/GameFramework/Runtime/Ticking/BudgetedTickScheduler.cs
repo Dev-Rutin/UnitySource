@@ -122,8 +122,14 @@ namespace Rutin.GameFramework.Ticking
         public TickBatchStats Tick(
             float deltaTime,
             double timeBudgetMilliseconds,
-            int maxProcessedItems = int.MaxValue)
+            int maxProcessedItems = int.MaxValue,
+            float maxAccumulatedDeltaTime = float.PositiveInfinity)
         {
+            if (maxAccumulatedDeltaTime < 0f)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxAccumulatedDeltaTime));
+            }
+
             _elapsedTime += Math.Max(0f, deltaTime);
             int registeredCount = _tickables.Count;
             if (registeredCount == 0 || maxProcessedItems <= 0)
@@ -167,7 +173,9 @@ namespace Rutin.GameFramework.Ticking
                         continue;
                     }
 
-                    tickable.Tick((float)accumulatedDeltaTime);
+                    tickable.Tick((float)Math.Min(
+                        accumulatedDeltaTime,
+                        maxAccumulatedDeltaTime));
                     processed++;
 
                     if (hasTimeBudget &&

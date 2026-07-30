@@ -12,6 +12,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
     public sealed class EntityLifecycleTests
     {
         private static readonly List<string> InitializationLog = new();
+        private static readonly List<string> ShutdownLog = new();
 
         private sealed class ProbeFeature : EntityFeature
         {
@@ -121,6 +122,25 @@ namespace Rutin.GameFramework.Tests.PlayMode
             public override int InitializationOrder => 100;
         }
 
+        private sealed class FollowingShutdownFeature : EntityFeature
+        {
+            protected override void OnFeatureShutdown()
+            {
+                ShutdownLog.Add(nameof(FollowingShutdownFeature));
+            }
+        }
+
+        private sealed class ThrowingShutdownFeature : EntityFeature
+        {
+            public override int InitializationOrder => 100;
+
+            protected override void OnFeatureShutdown()
+            {
+                ShutdownLog.Add(nameof(ThrowingShutdownFeature));
+                throw new System.InvalidOperationException("Feature shutdown failure");
+            }
+        }
+
         [DefaultExecutionOrder(-9001)]
         private sealed class PreEntityFeature : EntityFeature
         {
@@ -147,8 +167,11 @@ namespace Rutin.GameFramework.Tests.PlayMode
         {
             public bool IsTickEnabled => true;
 
+            public int TickCount { get; private set; }
+
             public void Tick(float deltaTime)
             {
+                TickCount++;
             }
         }
 
@@ -304,6 +327,33 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator FeatureShutdownFailure_DoesNotSkipRemainingFeatures()
+        {
+            ShutdownLog.Clear();
+            GameObject entityObject = new("Feature Shutdown Isolation Entity");
+            entityObject.SetActive(false);
+            entityObject.AddComponent<GameplayEntity>();
+            entityObject.AddComponent<FollowingShutdownFeature>();
+            entityObject.AddComponent<ThrowingShutdownFeature>();
+            entityObject.SetActive(true);
+            yield return null;
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Feature shutdown failure"));
+            Object.Destroy(entityObject);
+            yield return null;
+
+            Assert.That(
+                ShutdownLog,
+                Is.EqualTo(new[]
+                {
+                    nameof(ThrowingShutdownFeature),
+                    nameof(FollowingShutdownFeature)
+                }));
+        }
+
+        [UnityTest]
         public IEnumerator TickScheduler_PreservesRegistrationMadeBeforeHostInitialization()
         {
             GameObject hostObject = new("Early Tick Registration Host");
@@ -318,6 +368,34 @@ namespace Rutin.GameFramework.Tests.PlayMode
             yield return null;
 
             Assert.That(scheduler.Count, Is.EqualTo(1));
+
+            Object.Destroy(hostObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator TickScheduler_StopsWhileHostServiceLifecycleIsInactive()
+        {
+            GameObject hostObject = new("Tick Lifecycle Host");
+            hostObject.SetActive(false);
+            GameManagerHost host = hostObject.AddComponent<GameManagerHost>();
+            TickSchedulerService scheduler = hostObject.AddComponent<TickSchedulerService>();
+            ProbeTickable tickable = new();
+            scheduler.Register(tickable);
+
+            hostObject.SetActive(true);
+            yield return null;
+            int activeTickCount = tickable.TickCount;
+            Assert.That(activeTickCount, Is.GreaterThan(0));
+
+            host.enabled = false;
+            yield return null;
+            yield return null;
+            Assert.That(tickable.TickCount, Is.EqualTo(activeTickCount));
+
+            host.enabled = true;
+            yield return null;
+            Assert.That(tickable.TickCount, Is.GreaterThan(activeTickCount));
 
             Object.Destroy(hostObject);
             yield return null;

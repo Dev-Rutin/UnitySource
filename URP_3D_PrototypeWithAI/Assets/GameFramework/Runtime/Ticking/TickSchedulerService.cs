@@ -18,8 +18,15 @@ namespace Rutin.GameFramework.Ticking
         [Min(1)]
         [SerializeField] private int initialCapacity = 1024;
 
+        [Min(0f)]
+        [SerializeField] private float maxAccumulatedDeltaTime = 0.25f;
+
+        [Min(1)]
+        [SerializeField] private int saturationWarningFrameThreshold = 120;
+
         private BudgetedTickScheduler _scheduler;
         private bool _hasShutDown;
+        private int _consecutiveSaturatedFrames;
 
         public int Count => EnsureScheduler().Count;
 
@@ -41,12 +48,13 @@ namespace Rutin.GameFramework.Ticking
             _scheduler?.Clear();
             _scheduler = null;
             _hasShutDown = true;
+            _consecutiveSaturatedFrames = 0;
             LastFrameStats = default;
         }
 
         private void Update()
         {
-            if (_scheduler == null)
+            if (_scheduler == null || !IsServiceActive)
             {
                 return;
             }
@@ -54,7 +62,9 @@ namespace Rutin.GameFramework.Ticking
             LastFrameStats = _scheduler.Tick(
                 Time.deltaTime,
                 frameBudgetMilliseconds,
-                maxProcessedItemsPerFrame);
+                maxProcessedItemsPerFrame,
+                maxAccumulatedDeltaTime);
+            UpdateSaturationDiagnostics();
         }
 
         public bool Register(IGameTickable tickable)
@@ -79,6 +89,25 @@ namespace Rutin.GameFramework.Ticking
         {
             _scheduler ??= new BudgetedTickScheduler(initialCapacity);
             return _scheduler;
+        }
+
+        private void UpdateSaturationDiagnostics()
+        {
+            if (LastFrameStats.VisitedCount >= LastFrameStats.RegisteredCount)
+            {
+                _consecutiveSaturatedFrames = 0;
+                return;
+            }
+
+            _consecutiveSaturatedFrames++;
+            if (_consecutiveSaturatedFrames == saturationWarningFrameThreshold)
+            {
+                Debug.LogWarning(
+                    $"{nameof(TickSchedulerService)} has exceeded its processing budget for " +
+                    $"{_consecutiveSaturatedFrames} consecutive frames. Registered=" +
+                    $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}.",
+                    this);
+            }
         }
     }
 }

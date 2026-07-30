@@ -85,7 +85,14 @@ namespace Rutin.GameFramework.Factory
 
             for (int i = 0; i < _callbacks.Length; i++)
             {
-                _callbacks[i].OnRentFromPool();
+                try
+                {
+                    _callbacks[i].OnRentFromPool();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, _callbacks[i] as UnityEngine.Object);
+                }
             }
 
             gameObject.SetActive(true);
@@ -100,7 +107,14 @@ namespace Rutin.GameFramework.Factory
 
             for (int i = _callbacks.Length - 1; i >= 0; i--)
             {
-                _callbacks[i].OnReturnToPool();
+                try
+                {
+                    _callbacks[i].OnReturnToPool();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, _callbacks[i] as UnityEngine.Object);
+                }
             }
 
             gameObject.SetActive(false);
