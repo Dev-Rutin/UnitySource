@@ -1,0 +1,21 @@
+{
+  "name": "Rutin.GameFramework.Tests.EditMode",
+  "rootNamespace": "Rutin.GameFramework.Tests.EditMode",
+  "references": [
+    "Rutin.GameFramework.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
