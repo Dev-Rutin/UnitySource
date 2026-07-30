@@ -14,12 +14,15 @@ namespace Rutin.GameFramework.Management
         private GameManagerHost _host;
         private bool _initialized;
         private bool _active;
+        private bool _initializationFailed;
 
         public GameManagerHost Host => _host;
 
         public bool IsServiceInitialized => _initialized;
 
         public bool IsServiceActive => _active;
+
+        internal bool HasInitializationFailed => _initializationFailed;
 
         public virtual int InitializationOrder => 0;
 
@@ -69,6 +72,7 @@ namespace Rutin.GameFramework.Management
 
             _host = host;
             _initialized = true;
+            _initializationFailed = false;
 
             try
             {
@@ -82,6 +86,7 @@ namespace Rutin.GameFramework.Management
             catch
             {
                 RollbackFailedInitialization();
+                _initializationFailed = true;
                 throw;
             }
         }

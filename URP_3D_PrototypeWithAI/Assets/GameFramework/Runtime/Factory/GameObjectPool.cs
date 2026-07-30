@@ -17,9 +17,10 @@ namespace Rutin.GameFramework.Factory
         private readonly int _maxSize;
         private readonly Stack<PooledInstance> _inactive;
         private readonly HashSet<PooledInstance> _inactiveInstances;
+        private readonly HashSet<PooledInstance> _rentedInstances;
         private readonly HashSet<PooledInstance> _allInstances;
+        private readonly List<PooledInstance> _destroyedBuffer;
         private bool _disposed;
-        private int _rentedCount;
 
         public GameObjectPool(
             GameObject prefab,
@@ -47,18 +48,46 @@ namespace Rutin.GameFramework.Factory
             _maxSize = maxSize;
             _inactive = new Stack<PooledInstance>(Math.Max(initialCapacity, 4));
             _inactiveInstances = new HashSet<PooledInstance>(
+                initialCapacity,
+                ReferenceEqualityComparer<PooledInstance>.Instance);
+            _rentedInstances = new HashSet<PooledInstance>(
+                initialCapacity,
                 ReferenceEqualityComparer<PooledInstance>.Instance);
             _allInstances = new HashSet<PooledInstance>(
+                initialCapacity,
                 ReferenceEqualityComparer<PooledInstance>.Instance);
+            _destroyedBuffer = new List<PooledInstance>(
+                Math.Max(initialCapacity, 4));
 
             Warmup(initialCapacity);
         }
 
-        public int CountAll => _allInstances.Count;
+        public int CountAll
+        {
+            get
+            {
+                PruneDestroyedInstances();
+                return _allInstances.Count;
+            }
+        }
 
-        public int CountInactive => _inactiveInstances.Count;
+        public int CountInactive
+        {
+            get
+            {
+                PruneDestroyedInstances();
+                return _inactiveInstances.Count;
+            }
+        }
 
-        public int CountRented => _rentedCount;
+        public int CountRented
+        {
+            get
+            {
+                PruneDestroyedInstances();
+                return _rentedInstances.Count;
+            }
+        }
 
         public int MaxSize => _maxSize;
 
@@ -94,13 +123,17 @@ namespace Rutin.GameFramework.Factory
             {
                 if (_allInstances.Count >= _maxSize)
                 {
-                    return false;
+                    PruneDestroyedInstances();
+                    if (_allInstances.Count >= _maxSize)
+                    {
+                        return false;
+                    }
                 }
 
                 instance = CreateInstance();
             }
 
-            _rentedCount++;
+            _rentedInstances.Add(instance);
             instance.Rent(position, rotation, parent);
             return true;
         }
@@ -139,7 +172,7 @@ namespace Rutin.GameFramework.Factory
             instance.Return(_inactiveRoot);
             _inactive.Push(instance);
             _inactiveInstances.Add(instance);
-            _rentedCount--;
+            _rentedInstances.Remove(instance);
             return true;
         }
 
@@ -170,8 +203,9 @@ namespace Rutin.GameFramework.Factory
 
             _inactive.Clear();
             _inactiveInstances.Clear();
+            _rentedInstances.Clear();
             _allInstances.Clear();
-            _rentedCount = 0;
+            _destroyedBuffer.Clear();
         }
 
         internal void NotifyInstanceDestroyed(PooledInstance instance, bool wasRented)
@@ -182,9 +216,9 @@ namespace Rutin.GameFramework.Factory
             }
 
             _inactiveInstances.Remove(instance);
-            if (wasRented && _rentedCount > 0)
+            if (wasRented)
             {
-                _rentedCount--;
+                _rentedInstances.Remove(instance);
             }
         }
 
@@ -219,9 +253,37 @@ namespace Rutin.GameFramework.Factory
                 }
 
                 _allInstances.Remove(candidate);
+                _rentedInstances.Remove(candidate);
             }
 
             return null;
+        }
+
+        private void PruneDestroyedInstances()
+        {
+            if (_disposed || _allInstances.Count == 0)
+            {
+                return;
+            }
+
+            _destroyedBuffer.Clear();
+            foreach (PooledInstance instance in _allInstances)
+            {
+                if (instance == null)
+                {
+                    _destroyedBuffer.Add(instance);
+                }
+            }
+
+            for (int i = 0; i < _destroyedBuffer.Count; i++)
+            {
+                PooledInstance destroyed = _destroyedBuffer[i];
+                _allInstances.Remove(destroyed);
+                _inactiveInstances.Remove(destroyed);
+                _rentedInstances.Remove(destroyed);
+            }
+
+            _destroyedBuffer.Clear();
         }
 
         private void ThrowIfDisposed()

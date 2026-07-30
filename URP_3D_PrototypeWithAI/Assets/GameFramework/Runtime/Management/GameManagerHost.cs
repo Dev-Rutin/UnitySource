@@ -136,7 +136,10 @@ namespace Rutin.GameFramework.Management
 
         internal void RegisterService(GameServiceBehaviour service)
         {
-            if (service == null || _isShuttingDown || IndexOfReference(service) >= 0)
+            if (service == null ||
+                service.HasInitializationFailed ||
+                _isShuttingDown ||
+                IndexOfReference(service) >= 0)
             {
                 return;
             }
