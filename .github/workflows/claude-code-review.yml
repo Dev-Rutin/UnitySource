@@ -44,6 +44,6 @@ jobs:
 
             리뷰 결과는 gh pr comment 로 PR에 남겨줘.
           claude_args: |
-            --max-turns 10
+            --max-turns 30
             --model claude-opus-5
-            --allowedTools "Bash(gh pr:*),Bash(gh api:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh pr:*),Bash(gh api:*)"
