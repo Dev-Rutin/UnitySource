@@ -327,6 +327,7 @@ namespace Rutin.GameFramework.Ticking
                 return false;
             }
 
+            Debug.LogException(exception, tickable as Object);
             Unregister(tickable);
             return true;
         }

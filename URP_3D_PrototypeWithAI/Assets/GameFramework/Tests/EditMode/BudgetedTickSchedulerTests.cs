@@ -263,11 +263,16 @@ namespace Rutin.GameFramework.Tests.EditMode
                 LogType.Exception,
                 new System.Text.RegularExpressions.Regex("Tick callback failure"));
 
-            TickBatchStats stats = default;
-            for (int i = 0; i < 3; i++)
-            {
-                stats = scheduler.Tick(0.016f, 0d);
-            }
+            scheduler.Tick(0.016f, 0d);
+            scheduler.Tick(0.016f, 0d);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick enabled failure"));
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick callback failure"));
+            TickBatchStats stats = scheduler.Tick(0.016f, 0d);
 
             Assert.That(healthy.TickCount, Is.EqualTo(3));
             Assert.That(scheduler.Count, Is.EqualTo(1));

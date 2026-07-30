@@ -55,7 +55,6 @@ namespace Rutin.GameFramework.Ticking
             _scheduler = null;
             _hasShutDown = true;
             _consecutiveSaturatedFrames = 0;
-            TotalQuarantinedCount = 0;
             LastFrameStats = default;
         }
 
