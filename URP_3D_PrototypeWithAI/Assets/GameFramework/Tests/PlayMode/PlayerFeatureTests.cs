@@ -506,6 +506,31 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 Quaternion.Angle(pitchObject.transform.localRotation, expectedPitch),
                 Is.LessThan(0.001f));
             Assert.That(motor.MovementSpace, Is.SameAs(yawObject.transform));
+
+            GameObject replacementYaw = CreateObject("Replacement Yaw Root");
+            replacementYaw.transform.SetParent(player.transform, false);
+            Quaternion replacementBase = Quaternion.Euler(4f, 15f, 2f);
+            replacementYaw.transform.localRotation = replacementBase;
+            lookFeature.SetViewTransforms(replacementYaw.transform, null);
+
+            Assert.That(motor.MovementSpace, Is.SameAs(replacementYaw.transform));
+            Assert.That(lookFeature.Yaw, Is.EqualTo(30f).Within(0.001f));
+            Assert.That(
+                Quaternion.Angle(
+                    replacementYaw.transform.localRotation,
+                    replacementBase * Quaternion.AngleAxis(30f, Vector3.up)),
+                Is.LessThan(0.001f));
+
+            GameObject explicitMovementSpace =
+                CreateObject("Explicit Movement Space");
+            motor.SetMovementSpace(explicitMovementSpace.transform);
+            GameObject anotherYaw = CreateObject("Another Yaw Root");
+            anotherYaw.transform.SetParent(player.transform, false);
+            lookFeature.SetViewTransforms(anotherYaw.transform, null);
+
+            Assert.That(
+                motor.MovementSpace,
+                Is.SameAs(explicitMovementSpace.transform));
         }
 
         [Test]

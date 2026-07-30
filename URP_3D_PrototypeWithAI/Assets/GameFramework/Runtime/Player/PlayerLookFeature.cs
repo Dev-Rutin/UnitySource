@@ -38,11 +38,27 @@ namespace Rutin.GameFramework.Player
         public Transform MovementReference =>
             yawRoot != null ? yawRoot : transform;
 
-        public void SetViewTransforms(Transform newYawRoot, Transform newPitchPivot)
+        public void SetViewTransforms(
+            Transform newYawRoot,
+            Transform newPitchPivot,
+            bool preserveViewAngles = true)
         {
+            if (ReferenceEquals(yawRoot, newYawRoot) &&
+                ReferenceEquals(pitchPivot, newPitchPivot))
+            {
+                UpdateMotorMovementReference();
+                return;
+            }
+
+            float previousYaw = preserveViewAngles ? _yaw : 0f;
+            float previousPitch = preserveViewAngles ? _pitch : 0f;
             yawRoot = newYawRoot;
             pitchPivot = newPitchPivot;
             CaptureBaseRotations();
+            _yaw = previousYaw;
+            _pitch = Mathf.Clamp(previousPitch, minimumPitch, maximumPitch);
+            ApplyViewRotation();
+            UpdateMotorMovementReference();
         }
 
         public void ProcessPlayerCommand(PlayerCommand command, float deltaTime)
@@ -56,14 +72,7 @@ namespace Rutin.GameFramework.Player
             _yaw = Mathf.Repeat(_yaw + look.x, 360f);
             _pitch = Mathf.Clamp(_pitch - look.y, minimumPitch, maximumPitch);
 
-            Transform activeYawRoot = MovementReference;
-            activeYawRoot.localRotation =
-                _baseYawRotation * Quaternion.AngleAxis(_yaw, Vector3.up);
-            if (pitchPivot != null)
-            {
-                pitchPivot.localRotation =
-                    _basePitchRotation * Quaternion.AngleAxis(_pitch, Vector3.right);
-            }
+            ApplyViewRotation();
         }
 
         public void ResetPlayerCommandState()
@@ -87,6 +96,18 @@ namespace Rutin.GameFramework.Player
             _commands = null;
         }
 
+        private void ApplyViewRotation()
+        {
+            Transform activeYawRoot = MovementReference;
+            activeYawRoot.localRotation =
+                _baseYawRotation * Quaternion.AngleAxis(_yaw, Vector3.up);
+            if (pitchPivot != null)
+            {
+                pitchPivot.localRotation =
+                    _basePitchRotation * Quaternion.AngleAxis(_pitch, Vector3.right);
+            }
+        }
+
         private void CaptureBaseRotations()
         {
             Transform activeYawRoot = MovementReference;
@@ -96,6 +117,15 @@ namespace Rutin.GameFramework.Player
                 : Quaternion.identity;
             _yaw = 0f;
             _pitch = 0f;
+        }
+
+        private void UpdateMotorMovementReference()
+        {
+            if (Owner != null &&
+                Owner.TryGetFeature(out PlayerCharacterMotorFeature motor))
+            {
+                motor.UpdateLookMovementSpace(MovementReference);
+            }
         }
     }
 }

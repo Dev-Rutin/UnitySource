@@ -47,6 +47,7 @@ namespace Rutin.GameFramework.Player
         private float _verticalVelocity;
         private double _accumulatedTime;
         private float _jumpBufferRemaining;
+        private bool _usesLookMovementSpace;
 
         public int CommandOrder => 0;
 
@@ -59,11 +60,21 @@ namespace Rutin.GameFramework.Player
         public void SetMovementSpace(Transform value)
         {
             movementSpace = value;
+            _usesLookMovementSpace = false;
         }
 
         internal void UseMovementSpaceIfUnset(Transform value)
         {
             if (movementSpace == null)
+            {
+                movementSpace = value;
+                _usesLookMovementSpace = true;
+            }
+        }
+
+        internal void UpdateLookMovementSpace(Transform value)
+        {
+            if (_usesLookMovementSpace)
             {
                 movementSpace = value;
             }
@@ -124,6 +135,7 @@ namespace Rutin.GameFramework.Player
                 Owner.TryGetFeature(out PlayerLookFeature lookFeature))
             {
                 movementSpace = lookFeature.MovementReference;
+                _usesLookMovementSpace = true;
             }
         }
 
@@ -138,6 +150,7 @@ namespace Rutin.GameFramework.Player
             ResetMotion();
             _controller = null;
             _commands = null;
+            _usesLookMovementSpace = false;
         }
 
         private void SimulateStep(float step)

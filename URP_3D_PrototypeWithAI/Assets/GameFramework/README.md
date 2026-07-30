@@ -53,6 +53,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
   explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
   run before the motor so movement uses the current command's yaw without a one-tick delay.
+  Runtime `SetViewTransforms` changes update the automatic motor reference and preserve view
+  offsets; an explicit `SetMovementSpace` remains authoritative.
 - Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
 
 ## Factory and pooling
@@ -92,10 +94,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 26 passed, 0 failed | 0.168 s test duration |
-| PlayMode | 36 passed, 0 failed | 0.964 s test duration |
+| EditMode | 26 passed, 0 failed | 0.295 s test duration |
+| PlayMode | 36 passed, 0 failed | 1.025 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 96.537 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 112.622 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
