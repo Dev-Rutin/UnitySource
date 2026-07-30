@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using Rutin.GameFramework.Core;
 using Rutin.GameFramework.InputSystem;
+using Rutin.GameFramework.Management;
 using Rutin.GameFramework.Player;
 using Rutin.GameFramework.Ticking;
 using UnityEngine;
@@ -41,6 +42,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             public PlayerCommand LastCommand { get; private set; }
 
+            public Action ProcessAction { get; set; }
+
             public void ProcessPlayerCommand(
                 PlayerCommand command,
                 float deltaTime)
@@ -48,6 +51,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 CallCount++;
                 LastCommand = command;
                 OrderLog?.Add(Marker);
+                ProcessAction?.Invoke();
             }
 
             public void ResetPlayerCommandState()
@@ -170,7 +174,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void CommandFeature_RemoteTimeoutDispatchesNeutralOnce()
+        public void CommandFeature_RemoteTimeoutContinuesNeutralDispatch()
         {
             BudgetedTickScheduler scheduler = new();
             CreateCommandPlayer(
@@ -190,7 +194,73 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(consumer.CallCount, Is.EqualTo(2));
 
             scheduler.Tick(0.2f, 0d);
-            Assert.That(consumer.CallCount, Is.EqualTo(2));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.CallCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void CommandFeature_ReentrantRegistrationDoesNotSkipOrDuplicateConsumers()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Reentrant Command Player");
+            player.AddComponent<GameplayEntity>();
+            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            ProbeCommandConsumer first = player.AddComponent<ProbeCommandConsumer>();
+            ProbeCommandConsumer second = player.AddComponent<ProbeCommandConsumer>();
+            ProbeCommandConsumer newcomer = player.AddComponent<ProbeCommandConsumer>();
+            first.CommandOrder = 0;
+            newcomer.CommandOrder = 5;
+            second.CommandOrder = 10;
+            first.ProcessAction = () =>
+            {
+                commands.UnregisterConsumer(first);
+                commands.RegisterConsumer(newcomer);
+            };
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(first);
+            commands.RegisterConsumer(second);
+            player.SetActive(true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(first.CallCount, Is.EqualTo(1));
+            Assert.That(second.CallCount, Is.EqualTo(1));
+            Assert.That(newcomer.CallCount, Is.Zero);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(first.CallCount, Is.EqualTo(1));
+            Assert.That(second.CallCount, Is.EqualTo(2));
+            Assert.That(newcomer.CallCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void CommandFeature_ReentrantResetAbortsRemainingDispatch()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Resetting Command Player");
+            player.AddComponent<GameplayEntity>();
+            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            ProbeCommandConsumer first = player.AddComponent<ProbeCommandConsumer>();
+            ProbeCommandConsumer second = player.AddComponent<ProbeCommandConsumer>();
+            first.CommandOrder = 0;
+            second.CommandOrder = 10;
+            first.ProcessAction = () => commands.SetSimulationEnabled(false);
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(first);
+            commands.RegisterConsumer(second);
+            player.SetActive(true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(first.CallCount, Is.EqualTo(1));
+            Assert.That(second.CallCount, Is.Zero);
+            Assert.That(first.ResetCount, Is.EqualTo(1));
+            Assert.That(second.ResetCount, Is.EqualTo(1));
         }
 
         [Test]
@@ -209,7 +279,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             commands.SetLocallyControlled(false);
             source.Command = new PlayerCommand(Vector2.left, Vector2.zero, false);
             scheduler.Tick(0.016f, 0d);
-            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
 
             commands.SubmitCommand(
                 new PlayerCommand(Vector2.right, Vector2.zero, false, 19));
@@ -253,6 +323,27 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             commands.SetTickScheduler(scheduler);
             Assert.That(scheduler.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ScheduledFeature_ReRegistersWhenDefaultSchedulerIsReplaced()
+        {
+            GameObject hostObject = CreateObject("Scheduler Host");
+            TickSchedulerService original =
+                hostObject.AddComponent<TickSchedulerService>();
+            GameObject player = CreateInactiveObject("Default Scheduled Player");
+            player.AddComponent<GameplayEntity>();
+            ProbeCommandSource source = player.AddComponent<ProbeCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            commands.SetCommandSource(source);
+            player.SetActive(true);
+            Assert.That(original.Count, Is.EqualTo(1));
+
+            UnityEngine.Object.DestroyImmediate(original);
+            TickSchedulerService replacement =
+                hostObject.AddComponent<TickSchedulerService>();
+
+            Assert.That(replacement.Count, Is.EqualTo(1));
         }
 
         [Test]
@@ -333,6 +424,23 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 splitBatchTransform.position.y,
                 Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+        }
+
+        [Test]
+        public void RemoteMotorWithoutPackets_ContinuesNeutralGravitySimulation()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "Remote Falling Player",
+                out _,
+                out Transform playerTransform);
+            playerTransform.position = Vector3.up * 2f;
+            player.GetComponent<PlayerCommandFeature>().SetLocallyControlled(false);
+
+            scheduler.Tick(0.1f, 0d);
+
+            Assert.That(playerTransform.position.y, Is.LessThan(2f));
         }
 
         [Test]

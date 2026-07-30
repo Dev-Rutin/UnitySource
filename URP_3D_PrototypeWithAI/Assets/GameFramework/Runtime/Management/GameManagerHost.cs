@@ -21,6 +21,8 @@ namespace Rutin.GameFramework.Management
 
         public static GameManagerHost Default { get; private set; }
 
+        internal static event System.Action DefaultServicesChanged;
+
         public ServiceRegistry Services { get; } = new();
 
         public int ServiceCount => _services.Count;
@@ -29,6 +31,7 @@ namespace Rutin.GameFramework.Management
         private static void ResetDefaultHost()
         {
             Default = null;
+            DefaultServicesChanged = null;
         }
 
         private void Awake()
@@ -72,6 +75,7 @@ namespace Rutin.GameFramework.Management
             }
 
             _discoveryBuffer.Clear();
+            NotifyDefaultServicesChanged();
         }
 
         private void OnEnable()
@@ -132,6 +136,7 @@ namespace Rutin.GameFramework.Management
             if (ReferenceEquals(Default, this))
             {
                 Default = null;
+                NotifyDefaultServicesChanged();
             }
         }
 
@@ -162,6 +167,8 @@ namespace Rutin.GameFramework.Management
             {
                 TrySetServiceActive(service, true);
             }
+
+            NotifyDefaultServicesChanged();
         }
 
         internal void UnregisterService(GameServiceBehaviour service)
@@ -184,6 +191,7 @@ namespace Rutin.GameFramework.Management
             finally
             {
                 _services.RemoveAt(index);
+                NotifyDefaultServicesChanged();
             }
         }
 
@@ -308,6 +316,14 @@ namespace Rutin.GameFramework.Management
             catch (System.Exception exception)
             {
                 Debug.LogException(exception, service);
+            }
+        }
+
+        private void NotifyDefaultServicesChanged()
+        {
+            if (ReferenceEquals(Default, this) || Default == null)
+            {
+                DefaultServicesChanged?.Invoke();
             }
         }
     }

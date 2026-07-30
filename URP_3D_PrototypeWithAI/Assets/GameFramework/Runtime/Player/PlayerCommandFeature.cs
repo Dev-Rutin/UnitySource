@@ -21,6 +21,8 @@ namespace Rutin.GameFramework.Player
 
         private readonly List<MonoBehaviour> _sourceDiscoveryBuffer = new(4);
         private readonly List<IPlayerCommandConsumer> _consumers = new(4);
+        private readonly List<IPlayerCommandConsumer> _dispatchSnapshot = new(4);
+        private readonly List<IPlayerCommandConsumer> _resetSnapshot = new(4);
         private IPlayerCommandSource _source;
         private Vector2 _moveState;
         private Vector2 _pendingLook;
@@ -30,13 +32,14 @@ namespace Rutin.GameFramework.Player
         private uint _lastAcceptedSequence;
         private uint _currentSequence;
         private float _remoteCommandAge;
+        private uint _dispatchGeneration;
+        private bool _isResettingConsumers;
 
         public override int InitializationOrder => -200;
 
         public override bool IsTickEnabled =>
             IsFeatureActive &&
-            simulationEnabled &&
-            (locallyControlled ? _source != null : _hasRemoteCommand);
+            simulationEnabled;
 
         public bool IsLocallyControlled => locallyControlled;
 
@@ -141,7 +144,7 @@ namespace Rutin.GameFramework.Player
             float elapsed = Mathf.Max(0f, deltaTime);
             if (locallyControlled)
             {
-                if (_source.IsInputAvailable)
+                if (_source != null && _source.IsInputAvailable)
                 {
                     AcceptCommand(_source.ReadCommand(elapsed));
                 }
@@ -152,11 +155,14 @@ namespace Rutin.GameFramework.Player
             }
             else
             {
-                _remoteCommandAge += elapsed;
-                if (_remoteCommandAge >= Mathf.Max(0.01f, remoteCommandTimeout))
+                if (_hasRemoteCommand)
                 {
-                    _moveState = Vector2.zero;
-                    _hasRemoteCommand = false;
+                    _remoteCommandAge += elapsed;
+                    if (_remoteCommandAge >= Mathf.Max(0.01f, remoteCommandTimeout))
+                    {
+                        ClearPendingInput();
+                        _hasRemoteCommand = false;
+                    }
                 }
             }
 
@@ -184,6 +190,8 @@ namespace Rutin.GameFramework.Player
             _source = null;
             _sourceDiscoveryBuffer.Clear();
             _consumers.Clear();
+            _dispatchSnapshot.Clear();
+            _resetSnapshot.Clear();
         }
 
         private void DiscoverCommandSource()
@@ -239,52 +247,94 @@ namespace Rutin.GameFramework.Player
             _pendingLook = Vector2.zero;
             _pendingJump = false;
 
-            for (int i = 0; i < _consumers.Count; i++)
+            uint generation = _dispatchGeneration;
+            _dispatchSnapshot.Clear();
+            _dispatchSnapshot.AddRange(_consumers);
+            try
             {
-                IPlayerCommandConsumer consumer = _consumers[i];
-                if (consumer is UnityEngine.Object unityObject && unityObject == null)
+                for (int i = 0; i < _dispatchSnapshot.Count; i++)
                 {
-                    _consumers.RemoveAt(i--);
-                    continue;
-                }
+                    if (generation != _dispatchGeneration)
+                    {
+                        break;
+                    }
 
-                if (consumer is EntityFeature feature && !feature.IsFeatureActive)
-                {
-                    continue;
-                }
+                    IPlayerCommandConsumer consumer = _dispatchSnapshot[i];
+                    if (IndexOfConsumer(consumer) < 0)
+                    {
+                        continue;
+                    }
 
-                try
-                {
-                    consumer.ProcessPlayerCommand(command, deltaTime);
+                    if (consumer is UnityEngine.Object unityObject && unityObject == null)
+                    {
+                        UnregisterConsumer(consumer);
+                        continue;
+                    }
+
+                    if (consumer is EntityFeature feature && !feature.IsFeatureActive)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        consumer.ProcessPlayerCommand(command, deltaTime);
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogException(exception, consumer as UnityEngine.Object);
+                        UnregisterConsumer(consumer);
+                    }
                 }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception, consumer as UnityEngine.Object);
-                    _consumers.RemoveAt(i--);
-                }
+            }
+            finally
+            {
+                _dispatchSnapshot.Clear();
             }
         }
 
         private void ResetConsumers()
         {
-            for (int i = 0; i < _consumers.Count; i++)
+            _dispatchGeneration++;
+            if (_isResettingConsumers)
             {
-                IPlayerCommandConsumer consumer = _consumers[i];
-                if (consumer is UnityEngine.Object unityObject && unityObject == null)
-                {
-                    _consumers.RemoveAt(i--);
-                    continue;
-                }
+                return;
+            }
 
-                try
+            _isResettingConsumers = true;
+            _resetSnapshot.Clear();
+            _resetSnapshot.AddRange(_consumers);
+            try
+            {
+                for (int i = 0; i < _resetSnapshot.Count; i++)
                 {
-                    consumer.ResetPlayerCommandState();
+                    IPlayerCommandConsumer consumer = _resetSnapshot[i];
+                    if (IndexOfConsumer(consumer) < 0)
+                    {
+                        continue;
+                    }
+
+                    if (consumer is UnityEngine.Object unityObject && unityObject == null)
+                    {
+                        UnregisterConsumer(consumer);
+                        continue;
+                    }
+
+                    try
+                    {
+                        consumer.ResetPlayerCommandState();
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogException(exception, consumer as UnityEngine.Object);
+                        UnregisterConsumer(consumer);
+                    }
                 }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception, consumer as UnityEngine.Object);
-                    _consumers.RemoveAt(i--);
-                }
+            }
+            finally
+            {
+                _resetSnapshot.Clear();
+                _isResettingConsumers = false;
             }
         }
 
@@ -301,6 +351,13 @@ namespace Rutin.GameFramework.Player
                 _hasAcceptedSequence = false;
                 _lastAcceptedSequence = 0;
             }
+        }
+
+        private void ClearPendingInput()
+        {
+            _moveState = Vector2.zero;
+            _pendingLook = Vector2.zero;
+            _pendingJump = false;
         }
 
         private int IndexOfConsumer(IPlayerCommandConsumer consumer)

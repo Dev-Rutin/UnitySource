@@ -12,6 +12,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   population. Disabled tickables still consume one visit from the item budget.
 - `TickSchedulerService` quarantines only repeated failures, rate-limits exception logs,
   and exposes the session total through `TotalQuarantinedCount`.
+- Scheduled features log unexpected registration loss and automatically bind to a replacement
+  scheduler when the default host's service registry changes.
 
 ## Management
 
@@ -37,7 +39,7 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
   on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
   values reject duplicate/out-of-order packets, and remote movement becomes neutral after the
-  configured command timeout.
+  configured command timeout while gravity and other neutral simulation continue.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
@@ -85,10 +87,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 25 passed, 0 failed | 0.160 s test duration |
-| PlayMode | 28 passed, 0 failed | 0.994 s test duration |
+| EditMode | 25 passed, 0 failed | 0.191 s test duration |
+| PlayMode | 32 passed, 0 failed | 1.005 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 110.147 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 108.405 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

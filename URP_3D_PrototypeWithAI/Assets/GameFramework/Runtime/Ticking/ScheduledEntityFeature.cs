@@ -31,6 +31,15 @@ namespace Rutin.GameFramework.Ticking
             {
                 _scheduler = null;
             }
+
+            if (reason != TickUnregistrationReason.Explicit)
+            {
+                Debug.LogWarning(
+                    $"{GetType().Name} lost scheduler registration ({reason}). " +
+                    "It will retry when the default service registry changes, when the " +
+                    "feature is reactivated, or when SetTickScheduler is called.",
+                    this);
+            }
         }
 
         public void SetTickScheduler(ITickScheduler scheduler)
@@ -52,6 +61,7 @@ namespace Rutin.GameFramework.Ticking
         protected sealed override void OnFeatureInitialized()
         {
             OnScheduledFeatureInitialized();
+            GameManagerHost.DefaultServicesChanged += HandleDefaultServicesChanged;
             ResolveDefaultScheduler();
         }
 
@@ -76,6 +86,7 @@ namespace Rutin.GameFramework.Ticking
             }
             finally
             {
+                GameManagerHost.DefaultServicesChanged -= HandleDefaultServicesChanged;
                 _scheduler = null;
                 _missingSchedulerLogged = false;
             }
@@ -109,6 +120,17 @@ namespace Rutin.GameFramework.Ticking
             {
                 _scheduler = scheduler;
             }
+        }
+
+        private void HandleDefaultServicesChanged()
+        {
+            if (!IsFeatureActive || _registered)
+            {
+                return;
+            }
+
+            ResolveDefaultScheduler();
+            RegisterWithScheduler();
         }
 
         private void RegisterWithScheduler()
