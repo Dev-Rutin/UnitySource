@@ -8,6 +8,7 @@ namespace Rutin.GameFramework.InputSystem
     /// Optional local-device adapter. The runtime player assembly depends only on
     /// IPlayerCommandSource, so network or replay sources can replace this component.
     /// </summary>
+    [DefaultExecutionOrder(-8995)]
     [DisallowMultipleComponent]
     public sealed class InputSystemPlayerCommandSource :
         MonoBehaviour,

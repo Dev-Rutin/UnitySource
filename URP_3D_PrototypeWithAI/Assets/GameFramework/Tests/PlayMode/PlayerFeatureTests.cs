@@ -686,6 +686,23 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void InputSystemSource_UpdatesBeforeTickScheduler()
+        {
+            DefaultExecutionOrder sourceOrder =
+                (DefaultExecutionOrder)Attribute.GetCustomAttribute(
+                    typeof(InputSystemPlayerCommandSource),
+                    typeof(DefaultExecutionOrder));
+            DefaultExecutionOrder schedulerOrder =
+                (DefaultExecutionOrder)Attribute.GetCustomAttribute(
+                    typeof(TickSchedulerService),
+                    typeof(DefaultExecutionOrder));
+
+            Assert.That(sourceOrder, Is.Not.Null);
+            Assert.That(schedulerOrder, Is.Not.Null);
+            Assert.That(sourceOrder.order, Is.LessThan(schedulerOrder.order));
+        }
+
+        [Test]
         public void InputSystemSource_LatchesFrameEdgesUntilSchedulerRead()
         {
             GameObject inputObject = CreateObject("Input Source");
