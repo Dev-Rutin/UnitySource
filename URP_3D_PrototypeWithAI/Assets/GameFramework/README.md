@@ -21,6 +21,24 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Resolve contracts once through `GameManagerHost.Services` and cache the result in hot paths.
 - The registry never scans the scene and does not use LINQ.
 
+## Playable character
+
+- Add `CharacterController`, `GameplayEntity`, `PlayerCommandFeature`, and
+  `PlayerCharacterMotorFeature` to the player object.
+- Add `PlayerLookFeature` when the entity owns yaw/pitch transforms. Look commands are angular
+  deltas in degrees and are consumed once; jump presses are also consumed once.
+- For local control, add `InputSystemPlayerCommandSource` from the separate
+  `Rutin.GameFramework.InputSystem` assembly and assign move, look, and jump actions.
+  `PlayerCommandFeature` discovers the source once during initialization. Enable
+  `lookValueIsAngularRate` for stick-style look actions; mouse-delta actions should leave it off.
+- For remote/server control, call `SetLocallyControlled(false)` and submit immutable
+  `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
+  on the Unity Input System and can use network, replay, or AI command sources.
+- Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
+  clear held input and reset motor velocity on the next simulated command.
+- PC features inherit `ScheduledEntityFeature`; they never create individual `Update()` loops.
+  Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
+
 ## Factory and pooling
 
 - Configure integer-keyed pools on the host's `PooledObjectFactory`.
@@ -58,9 +76,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 22 passed, 0 failed | 0.161 s test duration |
-| PlayMode | 15 passed, 0 failed | 0.816 s test duration |
-| 5,000-object pooled rent/return | Passed | 85.332 ms, 0 managed bytes |
+| EditMode | 22 passed, 0 failed | 0.153 s test duration |
+| PlayMode | 21 passed, 0 failed | 0.930 s test duration |
+| 1,000 PC command/look ticks | Passed | 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 89.375 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

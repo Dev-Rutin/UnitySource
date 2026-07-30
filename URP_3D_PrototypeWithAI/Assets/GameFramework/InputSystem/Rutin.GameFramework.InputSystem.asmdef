@@ -1,0 +1,17 @@
+{
+  "name": "Rutin.GameFramework.InputSystem",
+  "rootNamespace": "Rutin.GameFramework.InputSystem",
+  "references": [
+    "Rutin.GameFramework.Runtime",
+    "Unity.InputSystem"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
