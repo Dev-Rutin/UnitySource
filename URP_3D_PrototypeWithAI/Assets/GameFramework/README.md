@@ -14,6 +14,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   and exposes the session total through `TotalQuarantinedCount`.
 - Scheduled features log unexpected registration loss and automatically bind to a replacement
   scheduler when the default host's service registry changes.
+- Scheduler clear removes registrations before observer callbacks, so recovery callbacks can
+  safely register a new scheduling session without mutating a live iteration.
 
 ## Management
 
@@ -46,7 +48,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
   to sorted motor/view consumers, making each player stack atomic even when the global scheduler
   is budget-limited or swap-removes other entities. The motor integrates accumulated time using
-  bounded fixed substeps.
+  bounded fixed substeps and buffers jump input briefly so a landing later in the same batch does
+  not lose the edge.
 - `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
   explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
   run before the motor so movement uses the current command's yaw without a one-tick delay.
@@ -89,10 +92,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 25 passed, 0 failed | 0.456 s test duration |
-| PlayMode | 34 passed, 0 failed | 1.056 s test duration |
+| EditMode | 26 passed, 0 failed | 0.168 s test duration |
+| PlayMode | 36 passed, 0 failed | 0.964 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 99.474 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 96.537 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

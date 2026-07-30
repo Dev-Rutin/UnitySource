@@ -444,6 +444,29 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void Motor_BuffersJumpUntilGroundedWithinFixedStepBatch()
+        {
+            GameObject floor = CreateObject("Jump Buffer Floor");
+            floor.transform.position = Vector3.down * 0.5f;
+            floor.transform.localScale = new Vector3(10f, 1f, 10f);
+            floor.AddComponent<BoxCollider>();
+
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "Buffered Jump Player",
+                out ProbeCommandSource source,
+                out Transform playerTransform);
+            playerTransform.position = Vector3.up * 1.01f;
+            source.Command =
+                new PlayerCommand(Vector2.zero, Vector2.zero, true);
+
+            scheduler.Tick(0.1f, 0d);
+
+            Assert.That(playerTransform.position.y, Is.GreaterThan(1.05f));
+        }
+
+        [Test]
         public void LookFeature_PreservesRigBaseRotationsAndSharesMovementReference()
         {
             BudgetedTickScheduler scheduler = new();
@@ -562,6 +585,35 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             commands.SetLocallyControlled(false);
             commands.SetLocallyControlled(true);
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.False);
+        }
+
+        [Test]
+        public void InputSystemSource_DiscardsInputBufferedWhileCommandFeatureDisabled()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Reactivated Input Player");
+            player.AddComponent<GameplayEntity>();
+            InputSystemPlayerCommandSource source =
+                player.AddComponent<InputSystemPlayerCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            ProbeCommandConsumer consumer = player.AddComponent<ProbeCommandConsumer>();
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(consumer);
+            player.SetActive(true);
+
+            commands.enabled = false;
+            source.BufferInputSample(
+                Vector2.up,
+                new Vector2(45f, 10f),
+                true,
+                0.016f);
+            commands.enabled = true;
             scheduler.Tick(0.016f, 0d);
 
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));

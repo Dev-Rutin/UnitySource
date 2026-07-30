@@ -20,7 +20,8 @@ namespace Rutin.GameFramework.Ticking
 
     /// <summary>
     /// Optional notification for tickables that cache scheduler registration state.
-    /// Implementations must not mutate the notifying scheduler from this callback.
+    /// The scheduler removes the registration before invoking this callback, so an observer
+    /// may explicitly register for a new scheduling session.
     /// </summary>
     public interface ITickSchedulerRegistrationObserver
     {

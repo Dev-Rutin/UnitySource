@@ -118,6 +118,10 @@ namespace Rutin.GameFramework.Ticking
         {
         }
 
+        protected virtual void OnSchedulerRegistered()
+        {
+        }
+
         private void ResolveDefaultScheduler()
         {
             if (_scheduler != null)
@@ -167,7 +171,11 @@ namespace Rutin.GameFramework.Ticking
             }
 
             _registered = _scheduler.Register(this);
-            if (!_registered)
+            if (_registered)
+            {
+                OnSchedulerRegistered();
+            }
+            else
             {
                 Debug.LogWarning(
                     $"{GetType().Name} was already registered or its scheduler rejected it.",

@@ -102,6 +102,9 @@ namespace Rutin.GameFramework.Tests.EditMode
 
             public TickUnregistrationReason LastReason { get; private set; }
 
+            public Action<ITickScheduler, TickUnregistrationReason>
+                OnUnregistered { get; set; }
+
             public void Tick(float deltaTime)
             {
                 if (ThrowOnTick)
@@ -116,6 +119,7 @@ namespace Rutin.GameFramework.Tests.EditMode
             {
                 NotificationCount++;
                 LastReason = reason;
+                OnUnregistered?.Invoke(scheduler, reason);
             }
         }
 
@@ -390,6 +394,26 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(
                 observed.LastReason,
                 Is.EqualTo(TickUnregistrationReason.SchedulerCleared));
+        }
+
+        [Test]
+        public void Clear_AllowsObserversToReRegisterWithoutLoopingOrSkipping()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ObservedTickable first = new();
+            ObservedTickable second = new();
+            first.OnUnregistered = (notifyingScheduler, reason) =>
+                notifyingScheduler.Register(first);
+            second.OnUnregistered = (notifyingScheduler, reason) =>
+                notifyingScheduler.Register(second);
+            scheduler.Register(first);
+            scheduler.Register(second);
+
+            scheduler.Clear();
+
+            Assert.That(first.NotificationCount, Is.EqualTo(1));
+            Assert.That(second.NotificationCount, Is.EqualTo(1));
+            Assert.That(scheduler.Count, Is.EqualTo(2));
         }
 
         [Test]

@@ -313,13 +313,14 @@ namespace Rutin.GameFramework.Ticking
 
         public void Clear()
         {
+            ITickSchedulerRegistrationObserver[] observers =
+                new ITickSchedulerRegistrationObserver[_tickables.Count];
+            int observerCount = 0;
             for (int i = 0; i < _tickables.Count; i++)
             {
                 if (_tickables[i] is ITickSchedulerRegistrationObserver observer)
                 {
-                    NotifyUnregistered(
-                        observer,
-                        TickUnregistrationReason.SchedulerCleared);
+                    observers[observerCount++] = observer;
                 }
             }
 
@@ -330,8 +331,17 @@ namespace Rutin.GameFramework.Ticking
             _hasLoggedFailure.Clear();
             _indices.Clear();
             _cursor = 0;
+            _currentRound = 0;
             _remainingInRound = 0;
+            _isTicking = false;
             _elapsedTime = 0d;
+
+            for (int i = 0; i < observerCount; i++)
+            {
+                NotifyUnregistered(
+                    observers[i],
+                    TickUnregistrationReason.SchedulerCleared);
+            }
         }
 
         private void BeginRound(int registeredCount)

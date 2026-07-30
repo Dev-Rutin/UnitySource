@@ -191,6 +191,11 @@ namespace Rutin.GameFramework.Player
             ResetConsumers();
         }
 
+        protected override void OnSchedulerRegistered()
+        {
+            DiscardSourceBuffer();
+        }
+
         protected override void OnScheduledFeatureShutdown()
         {
             ClearCommandState(true);

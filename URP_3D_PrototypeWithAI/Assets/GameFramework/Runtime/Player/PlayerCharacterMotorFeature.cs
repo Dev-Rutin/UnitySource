@@ -26,6 +26,9 @@ namespace Rutin.GameFramework.Player
         [SerializeField] private float jumpHeight = 1.25f;
 
         [Min(0f)]
+        [SerializeField] private float jumpBufferSeconds = 0.1f;
+
+        [Min(0f)]
         [SerializeField] private float maximumFallSpeed = 50f;
 
         [SerializeField] private float groundedVerticalSpeed = -2f;
@@ -43,7 +46,7 @@ namespace Rutin.GameFramework.Player
         private Vector3 _horizontalVelocity;
         private float _verticalVelocity;
         private double _accumulatedTime;
-        private bool _pendingJump;
+        private float _jumpBufferRemaining;
 
         public int CommandOrder => 0;
 
@@ -78,7 +81,12 @@ namespace Rutin.GameFramework.Player
             }
 
             _desiredMove = command.Move;
-            _pendingJump |= command.JumpPressed;
+            if (command.JumpPressed)
+            {
+                _jumpBufferRemaining = Mathf.Max(
+                    _jumpBufferRemaining,
+                    Mathf.Max(jumpBufferSeconds, fixedStepSeconds));
+            }
 
             double step = Math.Max(0.001d, fixedStepSeconds);
             int substepLimit = Mathf.Clamp(maximumSubsteps, 1, 32);
@@ -147,13 +155,12 @@ namespace Rutin.GameFramework.Player
                 _verticalVelocity = Mathf.Min(groundedVerticalSpeed, 0f);
             }
 
-            bool jumpRequested = _pendingJump;
-            _pendingJump = false;
             float effectiveGravity = Mathf.Min(gravity, -0.001f);
-            if (grounded && jumpRequested)
+            if (grounded && _jumpBufferRemaining > 0f)
             {
                 _verticalVelocity = Mathf.Sqrt(
                     jumpHeight * -2f * effectiveGravity);
+                _jumpBufferRemaining = 0f;
             }
 
             _verticalVelocity += effectiveGravity * step;
@@ -164,6 +171,9 @@ namespace Rutin.GameFramework.Player
             Vector3 displacement =
                 (_horizontalVelocity + Vector3.up * _verticalVelocity) * step;
             _controller.Move(displacement);
+            _jumpBufferRemaining = Mathf.Max(
+                0f,
+                _jumpBufferRemaining - step);
         }
 
         private Vector3 GetMovementDirection(Vector2 input)
@@ -202,7 +212,7 @@ namespace Rutin.GameFramework.Player
             _horizontalVelocity = Vector3.zero;
             _verticalVelocity = 0f;
             _accumulatedTime = 0f;
-            _pendingJump = false;
+            _jumpBufferRemaining = 0f;
         }
     }
 }
