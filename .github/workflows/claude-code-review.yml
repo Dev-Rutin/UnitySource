@@ -40,9 +40,15 @@ jobs:
                리뷰는 하지 않는다.
             3. 이 PR에 이전 리뷰 코멘트가 이미 달려 있다면, 이번 diff(새 커밋)에서
                해당 사항들이 반영되었는지 먼저 확인한다.
-               - 반영된 사항: 별도 언급 없이 넘어가거나 "반영 확인" 정도로만 짧게 표시
+               - 검토 시작 시 gh api graphql로 unresolved reviewThreads의 thread id,
+                 코멘트, 파일/라인 및 outdated 상태를 조회한다.
+               - 반영된 사항: 실제 코드와 테스트로 해결을 확인한 뒤 해당 review thread를
+                 resolveReviewThread GraphQL mutation으로 Resolve conversation 처리한다.
+                 단순히 outdated 상태라는 이유만으로 resolve하지 않는다.
                - 반영되지 않은 사항: 다시 언급
                - 새로 발견된 문제: 새 리뷰로 등록
+               - 이번 실행에서 새로 만든 스레드나 해결 여부가 불명확한 스레드는
+                 절대 resolve하지 않는다.
                - 기존 지적 사항이 모두 반영되었고 새로운 문제가 없다면, 리뷰를 종료한다는
                  취지로 짧게 정리한다.
             4. 구체적인 파일과 라인에 대한 지적은
@@ -56,7 +62,8 @@ jobs:
                  gh pr review ${{ github.event.pull_request.number }} --comment
                - 지적할 문제가 없으면:
                  gh pr review ${{ github.event.pull_request.number }} --approve
-               각 명령에는 검토 결과를 요약한 review body를 반드시 포함한다.
+               각 명령에는 검토 결과와 resolve한 기존 스레드 수를 요약한 review body를
+               반드시 포함한다.
 
             최종 결과는 반드시 GitHub의 정식 Submit review 상태로 남겨라.
           claude_args: |
