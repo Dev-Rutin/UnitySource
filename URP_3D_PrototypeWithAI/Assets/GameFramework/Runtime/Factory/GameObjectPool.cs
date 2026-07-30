@@ -16,6 +16,7 @@ namespace Rutin.GameFramework.Factory
         private readonly Transform _inactiveRoot;
         private readonly int _maxSize;
         private readonly Stack<PooledInstance> _inactive;
+        private readonly HashSet<PooledInstance> _inactiveInstances;
         private readonly HashSet<PooledInstance> _allInstances;
         private bool _disposed;
         private int _rentedCount;
@@ -45,6 +46,8 @@ namespace Rutin.GameFramework.Factory
             _inactiveRoot = inactiveRoot;
             _maxSize = maxSize;
             _inactive = new Stack<PooledInstance>(Math.Max(initialCapacity, 4));
+            _inactiveInstances = new HashSet<PooledInstance>(
+                ReferenceEqualityComparer<PooledInstance>.Instance);
             _allInstances = new HashSet<PooledInstance>(
                 ReferenceEqualityComparer<PooledInstance>.Instance);
 
@@ -53,7 +56,7 @@ namespace Rutin.GameFramework.Factory
 
         public int CountAll => _allInstances.Count;
 
-        public int CountInactive => _inactive.Count;
+        public int CountInactive => _inactiveInstances.Count;
 
         public int CountRented => _rentedCount;
 
@@ -74,6 +77,7 @@ namespace Rutin.GameFramework.Factory
                 instance.gameObject.SetActive(false);
                 instance.transform.SetParent(_inactiveRoot, false);
                 _inactive.Push(instance);
+                _inactiveInstances.Add(instance);
             }
         }
 
@@ -85,15 +89,11 @@ namespace Rutin.GameFramework.Factory
         {
             ThrowIfDisposed();
 
-            if (_inactive.Count > 0)
-            {
-                instance = _inactive.Pop();
-            }
-            else
+            instance = TakeInactiveInstance();
+            if (instance == null)
             {
                 if (_allInstances.Count >= _maxSize)
                 {
-                    instance = null;
                     return false;
                 }
 
@@ -138,6 +138,7 @@ namespace Rutin.GameFramework.Factory
 
             instance.Return(_inactiveRoot);
             _inactive.Push(instance);
+            _inactiveInstances.Add(instance);
             _rentedCount--;
             return true;
         }
@@ -168,8 +169,23 @@ namespace Rutin.GameFramework.Factory
             }
 
             _inactive.Clear();
+            _inactiveInstances.Clear();
             _allInstances.Clear();
             _rentedCount = 0;
+        }
+
+        internal void NotifyInstanceDestroyed(PooledInstance instance, bool wasRented)
+        {
+            if (_disposed || !_allInstances.Remove(instance))
+            {
+                return;
+            }
+
+            _inactiveInstances.Remove(instance);
+            if (wasRented && _rentedCount > 0)
+            {
+                _rentedCount--;
+            }
         }
 
         private PooledInstance CreateInstance()
@@ -185,6 +201,27 @@ namespace Rutin.GameFramework.Factory
             instance.Initialize(this);
             _allInstances.Add(instance);
             return instance;
+        }
+
+        private PooledInstance TakeInactiveInstance()
+        {
+            while (_inactive.Count > 0)
+            {
+                PooledInstance candidate = _inactive.Pop();
+                if (!_inactiveInstances.Remove(candidate))
+                {
+                    continue;
+                }
+
+                if (candidate != null)
+                {
+                    return candidate;
+                }
+
+                _allInstances.Remove(candidate);
+            }
+
+            return null;
         }
 
         private void ThrowIfDisposed()

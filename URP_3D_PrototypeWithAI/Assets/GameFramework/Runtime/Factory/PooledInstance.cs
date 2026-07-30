@@ -107,5 +107,14 @@ namespace Rutin.GameFramework.Factory
             transform.SetParent(inactiveRoot, false);
             _isRented = false;
         }
+
+        private void OnDestroy()
+        {
+            GameObjectPool owner = _owner;
+            bool wasRented = _isRented;
+            _owner = null;
+            _isRented = false;
+            owner?.NotifyInstanceDestroyed(this, wasRented);
+        }
     }
 }

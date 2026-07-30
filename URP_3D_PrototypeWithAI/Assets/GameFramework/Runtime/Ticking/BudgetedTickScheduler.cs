@@ -34,8 +34,12 @@ namespace Rutin.GameFramework.Ticking
     public sealed class BudgetedTickScheduler : ITickScheduler
     {
         private readonly List<IGameTickable> _tickables;
+        private readonly List<uint> _lastVisitedRounds;
         private readonly Dictionary<IGameTickable, int> _indices;
         private int _cursor;
+        private uint _currentRound;
+        private int _remainingInRound;
+        private bool _isTicking;
 
         public BudgetedTickScheduler(int initialCapacity = 256)
         {
@@ -45,6 +49,7 @@ namespace Rutin.GameFramework.Ticking
             }
 
             _tickables = new List<IGameTickable>(initialCapacity);
+            _lastVisitedRounds = new List<uint>(initialCapacity);
             _indices = new Dictionary<IGameTickable, int>(
                 initialCapacity,
                 ReferenceEqualityComparer<IGameTickable>.Instance);
@@ -66,6 +71,7 @@ namespace Rutin.GameFramework.Ticking
 
             int index = _tickables.Count;
             _tickables.Add(tickable);
+            _lastVisitedRounds.Add(_isTicking ? _currentRound : 0);
             _indices.Add(tickable, index);
             return true;
         }
@@ -79,18 +85,23 @@ namespace Rutin.GameFramework.Ticking
 
             int lastIndex = _tickables.Count - 1;
             IGameTickable last = _tickables[lastIndex];
+            uint removedLastVisitedRound = _lastVisitedRounds[index];
+            uint lastVisitedRound = _lastVisitedRounds[lastIndex];
+
+            if (_isTicking && removedLastVisitedRound != _currentRound)
+            {
+                _remainingInRound--;
+            }
+
             _tickables.RemoveAt(lastIndex);
+            _lastVisitedRounds.RemoveAt(lastIndex);
             _indices.Remove(tickable);
 
             if (index != lastIndex)
             {
                 _tickables[index] = last;
+                _lastVisitedRounds[index] = lastVisitedRound;
                 _indices[last] = index;
-            }
-
-            if (index < _cursor)
-            {
-                _cursor--;
             }
 
             if (_cursor < 0 || _cursor >= _tickables.Count)
@@ -116,31 +127,49 @@ namespace Rutin.GameFramework.Ticking
             int visited = 0;
             int processed = 0;
             bool hasTimeBudget = timeBudgetMilliseconds > 0d;
+            BeginRound(registeredCount);
 
-            while (visited < registeredCount && processed < maxProcessedItems)
+            try
             {
-                if (_cursor >= _tickables.Count)
+                while (_remainingInRound > 0 && processed < maxProcessedItems)
                 {
-                    _cursor = 0;
+                    if (_cursor >= _tickables.Count)
+                    {
+                        _cursor = 0;
+                    }
+
+                    int currentIndex = _cursor;
+                    _cursor++;
+
+                    if (_lastVisitedRounds[currentIndex] == _currentRound)
+                    {
+                        continue;
+                    }
+
+                    IGameTickable tickable = _tickables[currentIndex];
+                    _lastVisitedRounds[currentIndex] = _currentRound;
+                    _remainingInRound--;
+                    visited++;
+
+                    if (!tickable.IsTickEnabled)
+                    {
+                        continue;
+                    }
+
+                    tickable.Tick(deltaTime);
+                    processed++;
+
+                    if (hasTimeBudget &&
+                        GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
+                    {
+                        break;
+                    }
                 }
-
-                IGameTickable tickable = _tickables[_cursor];
-                _cursor++;
-                visited++;
-
-                if (!tickable.IsTickEnabled)
-                {
-                    continue;
-                }
-
-                tickable.Tick(deltaTime);
-                processed++;
-
-                if (hasTimeBudget &&
-                    GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
-                {
-                    break;
-                }
+            }
+            finally
+            {
+                _isTicking = false;
+                _remainingInRound = 0;
             }
 
             return new TickBatchStats(
@@ -148,6 +177,32 @@ namespace Rutin.GameFramework.Ticking
                 visited,
                 processed,
                 GetElapsedMilliseconds(startTimestamp));
+        }
+
+        public void Clear()
+        {
+            _tickables.Clear();
+            _lastVisitedRounds.Clear();
+            _indices.Clear();
+            _cursor = 0;
+            _remainingInRound = 0;
+        }
+
+        private void BeginRound(int registeredCount)
+        {
+            _currentRound++;
+            if (_currentRound == 0)
+            {
+                for (int i = 0; i < _lastVisitedRounds.Count; i++)
+                {
+                    _lastVisitedRounds[i] = 0;
+                }
+
+                _currentRound = 1;
+            }
+
+            _remainingInRound = registeredCount;
+            _isTicking = true;
         }
 
         private static double GetElapsedMilliseconds(long startTimestamp)

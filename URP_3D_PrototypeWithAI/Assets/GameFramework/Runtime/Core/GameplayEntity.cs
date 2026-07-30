@@ -7,6 +7,7 @@ namespace Rutin.GameFramework.Core
     /// Composition root for gameplay objects. It owns feature lifecycle without
     /// requiring each feature to run an independent Update loop.
     /// </summary>
+    [DefaultExecutionOrder(-9000)]
     [DisallowMultipleComponent]
     public sealed class GameplayEntity : MonoBehaviour
     {
@@ -24,7 +25,12 @@ namespace Rutin.GameFramework.Core
 
             for (int i = 0; i < _discoveryBuffer.Count; i++)
             {
-                RegisterFeature(_discoveryBuffer[i]);
+                InsertFeatureSorted(_discoveryBuffer[i]);
+            }
+
+            for (int i = 0; i < _features.Count; i++)
+            {
+                _features[i].Bind(this);
             }
 
             _discoveryBuffer.Clear();
@@ -86,20 +92,16 @@ namespace Rutin.GameFramework.Core
                 return;
             }
 
-            feature.Bind(this);
-
-            int insertIndex = _features.Count;
-            int order = feature.InitializationOrder;
-            for (int i = 0; i < _features.Count; i++)
+            InsertFeatureSorted(feature);
+            try
             {
-                if (_features[i].InitializationOrder > order)
-                {
-                    insertIndex = i;
-                    break;
-                }
+                feature.Bind(this);
             }
-
-            _features.Insert(insertIndex, feature);
+            catch
+            {
+                _features.Remove(feature);
+                throw;
+            }
 
             if (_entityActive && feature.isActiveAndEnabled)
             {
@@ -156,6 +158,22 @@ namespace Rutin.GameFramework.Core
             }
 
             return -1;
+        }
+
+        private void InsertFeatureSorted(EntityFeature feature)
+        {
+            int insertIndex = _features.Count;
+            int order = feature.InitializationOrder;
+            for (int i = 0; i < _features.Count; i++)
+            {
+                if (_features[i].InitializationOrder > order)
+                {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            _features.Insert(insertIndex, feature);
         }
     }
 }

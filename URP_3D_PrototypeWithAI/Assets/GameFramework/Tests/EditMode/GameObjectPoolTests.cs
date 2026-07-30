@@ -65,5 +65,36 @@ namespace Rutin.GameFramework.Tests.EditMode
                 _pool.TryRent(out _, Vector3.zero, Quaternion.identity),
                 Is.False);
         }
+
+        [Test]
+        public void DestroyRentedInstance_ReleasesCapacityAndRentedCount()
+        {
+            PooledInstance instance = _pool.Rent(Vector3.zero, Quaternion.identity);
+
+            Object.DestroyImmediate(instance.gameObject);
+
+            Assert.That(_pool.CountAll, Is.Zero);
+            Assert.That(_pool.CountRented, Is.Zero);
+            Assert.That(
+                _pool.TryRent(out PooledInstance replacement, Vector3.zero, Quaternion.identity),
+                Is.True);
+            Assert.That(replacement, Is.Not.Null);
+        }
+
+        [Test]
+        public void DestroyInactiveInstance_RemovesStaleStackEntry()
+        {
+            PooledInstance instance = _pool.Rent(Vector3.zero, Quaternion.identity);
+            _pool.Release(instance);
+
+            Object.DestroyImmediate(instance.gameObject);
+
+            Assert.That(_pool.CountAll, Is.Zero);
+            Assert.That(_pool.CountInactive, Is.Zero);
+            Assert.That(
+                _pool.TryRent(out PooledInstance replacement, Vector3.zero, Quaternion.identity),
+                Is.True);
+            Assert.That(replacement, Is.Not.Null);
+        }
     }
 }

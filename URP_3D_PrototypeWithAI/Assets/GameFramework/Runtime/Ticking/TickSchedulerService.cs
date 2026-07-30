@@ -6,6 +6,7 @@ namespace Rutin.GameFramework.Ticking
     /// <summary>
     /// One Update loop for many registered gameplay features.
     /// </summary>
+    [DefaultExecutionOrder(-8990)]
     public sealed class TickSchedulerService : GameServiceBehaviour, ITickScheduler
     {
         [Min(0f)]
@@ -18,8 +19,9 @@ namespace Rutin.GameFramework.Ticking
         [SerializeField] private int initialCapacity = 1024;
 
         private BudgetedTickScheduler _scheduler;
+        private bool _hasShutDown;
 
-        public int Count => _scheduler?.Count ?? 0;
+        public int Count => EnsureScheduler().Count;
 
         public TickBatchStats LastFrameStats { get; private set; }
 
@@ -30,12 +32,15 @@ namespace Rutin.GameFramework.Ticking
 
         protected override void OnServiceInitialized()
         {
-            _scheduler = new BudgetedTickScheduler(initialCapacity);
+            _hasShutDown = false;
+            EnsureScheduler();
         }
 
         protected override void OnServiceShutdown()
         {
+            _scheduler?.Clear();
             _scheduler = null;
+            _hasShutDown = true;
             LastFrameStats = default;
         }
 
@@ -54,12 +59,26 @@ namespace Rutin.GameFramework.Ticking
 
         public bool Register(IGameTickable tickable)
         {
-            return _scheduler != null && _scheduler.Register(tickable);
+            if (_hasShutDown)
+            {
+                Debug.LogWarning(
+                    $"{nameof(TickSchedulerService)} rejected registration after shutdown.",
+                    this);
+                return false;
+            }
+
+            return EnsureScheduler().Register(tickable);
         }
 
         public bool Unregister(IGameTickable tickable)
         {
             return _scheduler != null && _scheduler.Unregister(tickable);
+        }
+
+        private BudgetedTickScheduler EnsureScheduler()
+        {
+            _scheduler ??= new BudgetedTickScheduler(initialCapacity);
+            return _scheduler;
         }
     }
 }

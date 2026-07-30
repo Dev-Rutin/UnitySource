@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Rutin.GameFramework.Management
 {
@@ -17,6 +18,7 @@ namespace Rutin.GameFramework.Management
         private readonly List<GameServiceBehaviour> _discoveryBuffer = new(8);
         private bool _hostActive;
         private bool _isShuttingDown;
+        private bool _isRejectedDuplicate;
 
         public static GameManagerHost Default { get; private set; }
 
@@ -24,18 +26,23 @@ namespace Rutin.GameFramework.Management
 
         public int ServiceCount => _services.Count;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetDefaultHost()
+        {
+            Default = null;
+        }
+
         private void Awake()
         {
             if (makeDefaultHost)
             {
                 if (Default != null && !ReferenceEquals(Default, this))
                 {
-                    Debug.LogError("A default GameManagerHost already exists.", this);
+                    RejectDuplicateDefaultHost();
+                    return;
                 }
-                else
-                {
-                    Default = this;
-                }
+
+                Default = this;
             }
 
             if (persistAcrossScenes)
@@ -47,7 +54,18 @@ namespace Rutin.GameFramework.Management
             GetComponents(_discoveryBuffer);
             for (int i = 0; i < _discoveryBuffer.Count; i++)
             {
-                RegisterService(_discoveryBuffer[i]);
+                InsertServiceSorted(_discoveryBuffer[i]);
+            }
+
+            for (int i = 0; i < _services.Count;)
+            {
+                if (TryInitializeService(_services[i]))
+                {
+                    i++;
+                    continue;
+                }
+
+                _services.RemoveAt(i);
             }
 
             _discoveryBuffer.Clear();
@@ -55,6 +73,11 @@ namespace Rutin.GameFramework.Management
 
         private void OnEnable()
         {
+            if (_isRejectedDuplicate)
+            {
+                return;
+            }
+
             _hostActive = true;
             for (int i = 0; i < _services.Count; i++)
             {
@@ -80,7 +103,20 @@ namespace Rutin.GameFramework.Management
             _isShuttingDown = true;
             for (int i = _services.Count - 1; i >= 0; i--)
             {
-                _services[i]?.Shutdown();
+                GameServiceBehaviour service = _services[i];
+                if (service == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    service.Shutdown();
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogException(exception, service);
+                }
             }
 
             _services.Clear();
@@ -105,20 +141,12 @@ namespace Rutin.GameFramework.Management
                 return;
             }
 
-            service.Initialize(this);
-
-            int insertIndex = _services.Count;
-            int order = service.InitializationOrder;
-            for (int i = 0; i < _services.Count; i++)
+            InsertServiceSorted(service);
+            if (!TryInitializeService(service))
             {
-                if (_services[i].InitializationOrder > order)
-                {
-                    insertIndex = i;
-                    break;
-                }
+                _services.Remove(service);
+                return;
             }
-
-            _services.Insert(insertIndex, service);
 
             if (_hostActive && service.isActiveAndEnabled)
             {
@@ -170,6 +198,55 @@ namespace Rutin.GameFramework.Management
             }
 
             return -1;
+        }
+
+        private void InsertServiceSorted(GameServiceBehaviour service)
+        {
+            int insertIndex = _services.Count;
+            int order = service.InitializationOrder;
+            for (int i = 0; i < _services.Count; i++)
+            {
+                if (_services[i].InitializationOrder > order)
+                {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            _services.Insert(insertIndex, service);
+        }
+
+        private bool TryInitializeService(GameServiceBehaviour service)
+        {
+            try
+            {
+                service.Initialize(this);
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, service);
+                return false;
+            }
+        }
+
+        private void RejectDuplicateDefaultHost()
+        {
+            _isRejectedDuplicate = true;
+            _isShuttingDown = true;
+            Debug.LogError(
+                $"Duplicate default GameManagerHost '{name}' was rejected. " +
+                $"The existing host '{Default.name}' remains authoritative.",
+                this);
+
+            if (Application.isPlaying)
+            {
+                Object.Destroy(gameObject);
+            }
+            else
+            {
+                Object.DestroyImmediate(gameObject);
+            }
         }
     }
 }

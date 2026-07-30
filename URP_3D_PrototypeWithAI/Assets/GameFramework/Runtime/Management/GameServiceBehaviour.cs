@@ -70,12 +70,20 @@ namespace Rutin.GameFramework.Management
             _host = host;
             _initialized = true;
 
-            Type concreteType = GetType();
-            host.Services.Register(concreteType, this);
-            _registeredContracts.Add(concreteType);
+            try
+            {
+                Type concreteType = GetType();
+                host.Services.Register(concreteType, this);
+                _registeredContracts.Add(concreteType);
 
-            RegisterServiceContracts();
-            OnServiceInitialized();
+                RegisterServiceContracts();
+                OnServiceInitialized();
+            }
+            catch
+            {
+                RollbackFailedInitialization();
+                throw;
+            }
         }
 
         internal void SetServiceActive(bool active)
@@ -104,17 +112,47 @@ namespace Rutin.GameFramework.Management
                 return;
             }
 
-            SetServiceActive(false);
-            OnServiceShutdown();
-
-            for (int i = _registeredContracts.Count - 1; i >= 0; i--)
+            try
             {
-                _host.Services.Unregister(_registeredContracts[i], this);
+                SetServiceActive(false);
+                OnServiceShutdown();
+            }
+            finally
+            {
+                UnregisterContracts();
+                _initialized = false;
+                _host = null;
+            }
+        }
+
+        private void RollbackFailedInitialization()
+        {
+            try
+            {
+                SetServiceActive(false);
+                OnServiceShutdown();
+            }
+            catch (Exception rollbackException)
+            {
+                Debug.LogException(rollbackException, this);
+            }
+
+            UnregisterContracts();
+            _initialized = false;
+            _host = null;
+        }
+
+        private void UnregisterContracts()
+        {
+            if (_host != null)
+            {
+                for (int i = _registeredContracts.Count - 1; i >= 0; i--)
+                {
+                    _host.Services.Unregister(_registeredContracts[i], this);
+                }
             }
 
             _registeredContracts.Clear();
-            _initialized = false;
-            _host = null;
         }
 
         protected virtual void RegisterServiceContracts()
