@@ -240,6 +240,60 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
         }
 
+        private sealed class DefaultServicesObserverProbe :
+            IDefaultServicesObserver
+        {
+            public int NotificationCount { get; private set; }
+
+            public System.Action<int> Notified { get; set; }
+
+            public void OnDefaultServicesChanged()
+            {
+                NotificationCount++;
+                Notified?.Invoke(NotificationCount);
+            }
+        }
+
+        private static readonly System.Reflection.MethodInfo
+            NotifyDefaultServicesChangedMethod =
+                typeof(GameManagerHost).GetMethod(
+                    "NotifyDefaultServicesChanged",
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic);
+        private static readonly System.Reflection.MethodInfo
+            RegisterDefaultServicesObserverMethod =
+                typeof(GameManagerHost).GetMethod(
+                    "RegisterDefaultServicesObserver",
+                    System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.NonPublic);
+        private static readonly System.Reflection.MethodInfo
+            UnregisterDefaultServicesObserverMethod =
+                typeof(GameManagerHost).GetMethod(
+                    "UnregisterDefaultServicesObserver",
+                    System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.NonPublic);
+
+        private static void InvokeDefaultServicesChanged(GameManagerHost host)
+        {
+            NotifyDefaultServicesChangedMethod.Invoke(host, null);
+        }
+
+        private static void RegisterDefaultServicesObserver(
+            IDefaultServicesObserver observer)
+        {
+            RegisterDefaultServicesObserverMethod.Invoke(
+                null,
+                new object[] { observer });
+        }
+
+        private static void UnregisterDefaultServicesObserver(
+            IDefaultServicesObserver observer)
+        {
+            UnregisterDefaultServicesObserverMethod.Invoke(
+                null,
+                new object[] { observer });
+        }
+
         [UnityTest]
         public IEnumerator Feature_FollowsEntityActivationLifecycle()
         {
@@ -307,6 +361,59 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             Object.Destroy(hostObject);
             yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DefaultServiceObservers_NestedNotificationDefersCompaction()
+        {
+            GameObject hostObject = new("Reentrant Observer Host");
+            hostObject.SetActive(false);
+            GameManagerHost host = hostObject.AddComponent<GameManagerHost>();
+            hostObject.SetActive(true);
+            yield return null;
+
+            DefaultServicesObserverProbe nestedNotifier = new();
+            DefaultServicesObserverProbe selfRemoving = new();
+            DefaultServicesObserverProbe following = new();
+
+            nestedNotifier.Notified = count =>
+            {
+                if (count == 1)
+                {
+                    InvokeDefaultServicesChanged(host);
+                }
+            };
+            selfRemoving.Notified = count =>
+            {
+                if (count == 1)
+                {
+                    UnregisterDefaultServicesObserver(selfRemoving);
+                }
+            };
+
+            RegisterDefaultServicesObserver(nestedNotifier);
+            RegisterDefaultServicesObserver(selfRemoving);
+            RegisterDefaultServicesObserver(following);
+            try
+            {
+                Assert.DoesNotThrow(
+                    () => InvokeDefaultServicesChanged(host));
+                Assert.That(nestedNotifier.NotificationCount, Is.EqualTo(2));
+                Assert.That(selfRemoving.NotificationCount, Is.EqualTo(1));
+                Assert.That(following.NotificationCount, Is.EqualTo(2));
+
+                InvokeDefaultServicesChanged(host);
+                Assert.That(nestedNotifier.NotificationCount, Is.EqualTo(3));
+                Assert.That(selfRemoving.NotificationCount, Is.EqualTo(1));
+                Assert.That(following.NotificationCount, Is.EqualTo(3));
+            }
+            finally
+            {
+                UnregisterDefaultServicesObserver(nestedNotifier);
+                UnregisterDefaultServicesObserver(selfRemoving);
+                UnregisterDefaultServicesObserver(following);
+                Object.DestroyImmediate(hostObject);
+            }
         }
 
         [UnityTest]

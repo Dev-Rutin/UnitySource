@@ -31,7 +31,7 @@ namespace Rutin.GameFramework.Management
             DefaultServiceObserverIndices = new(
                 256,
                 ReferenceEqualityComparer<IDefaultServicesObserver>.Instance);
-        private static bool _isNotifyingDefaultServiceObservers;
+        private static int _defaultServiceObserverNotificationDepth;
 
         public static GameManagerHost Default { get; private set; }
 
@@ -45,7 +45,7 @@ namespace Rutin.GameFramework.Management
             Default = null;
             DefaultServiceObservers.Clear();
             DefaultServiceObserverIndices.Clear();
-            _isNotifyingDefaultServiceObservers = false;
+            _defaultServiceObserverNotificationDepth = 0;
         }
 
         private void Awake()
@@ -184,7 +184,7 @@ namespace Rutin.GameFramework.Management
             }
 
             DefaultServiceObserverIndices.Remove(observer);
-            if (_isNotifyingDefaultServiceObservers)
+            if (_defaultServiceObserverNotificationDepth > 0)
             {
                 DefaultServiceObservers[index] = null;
                 return;
@@ -374,7 +374,7 @@ namespace Rutin.GameFramework.Management
             }
 
             int observerCount = DefaultServiceObservers.Count;
-            _isNotifyingDefaultServiceObservers = true;
+            _defaultServiceObserverNotificationDepth++;
             try
             {
                 for (int i = 0; i < observerCount; i++)
@@ -405,8 +405,11 @@ namespace Rutin.GameFramework.Management
             }
             finally
             {
-                _isNotifyingDefaultServiceObservers = false;
-                CompactDefaultServicesObservers();
+                _defaultServiceObserverNotificationDepth--;
+                if (_defaultServiceObserverNotificationDepth == 0)
+                {
+                    CompactDefaultServicesObservers();
+                }
             }
         }
 

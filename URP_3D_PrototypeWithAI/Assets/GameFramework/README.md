@@ -97,8 +97,8 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 26 passed, 0 failed | 0.223 s test duration |
-| PlayMode | 39 passed, 0 failed | 0.977 s test duration |
+| EditMode | 26 passed, 0 failed | 0.242 s test duration |
+| PlayMode | 40 passed, 0 failed | 0.954 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
 | 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
 
