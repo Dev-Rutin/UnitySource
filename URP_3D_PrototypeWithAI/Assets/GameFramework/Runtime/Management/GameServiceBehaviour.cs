@@ -101,7 +101,15 @@ namespace Rutin.GameFramework.Management
             _active = active;
             if (active)
             {
-                OnServiceActivated();
+                try
+                {
+                    OnServiceActivated();
+                }
+                catch
+                {
+                    _active = false;
+                    throw;
+                }
             }
             else
             {

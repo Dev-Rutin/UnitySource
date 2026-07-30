@@ -87,7 +87,7 @@ namespace Rutin.GameFramework.Management
                 GameServiceBehaviour service = _services[i];
                 if (service != null && service.isActiveAndEnabled)
                 {
-                    service.SetServiceActive(true);
+                    TrySetServiceActive(service, true);
                 }
             }
         }
@@ -97,7 +97,11 @@ namespace Rutin.GameFramework.Management
             _hostActive = false;
             for (int i = _services.Count - 1; i >= 0; i--)
             {
-                _services[i]?.SetServiceActive(false);
+                GameServiceBehaviour service = _services[i];
+                if (service != null)
+                {
+                    TrySetServiceActive(service, false);
+                }
             }
         }
 
@@ -156,7 +160,7 @@ namespace Rutin.GameFramework.Management
 
             if (_hostActive && service.isActiveAndEnabled)
             {
-                service.SetServiceActive(true);
+                TrySetServiceActive(service, true);
             }
         }
 
@@ -173,15 +177,21 @@ namespace Rutin.GameFramework.Management
                 return;
             }
 
-            service.Shutdown();
-            _services.RemoveAt(index);
+            try
+            {
+                TryShutdownService(service);
+            }
+            finally
+            {
+                _services.RemoveAt(index);
+            }
         }
 
         internal void NotifyServiceEnabled(GameServiceBehaviour service)
         {
             if (!_isShuttingDown && _hostActive && IndexOfReference(service) >= 0)
             {
-                service.SetServiceActive(true);
+                TrySetServiceActive(service, true);
             }
         }
 
@@ -189,7 +199,7 @@ namespace Rutin.GameFramework.Management
         {
             if (!_isShuttingDown && IndexOfReference(service) >= 0)
             {
-                service.SetServiceActive(false);
+                TrySetServiceActive(service, false);
             }
         }
 
@@ -275,6 +285,30 @@ namespace Rutin.GameFramework.Management
             }
 
             _discoveryBuffer.Clear();
+        }
+
+        private static void TrySetServiceActive(GameServiceBehaviour service, bool active)
+        {
+            try
+            {
+                service.SetServiceActive(active);
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, service);
+            }
+        }
+
+        private static void TryShutdownService(GameServiceBehaviour service)
+        {
+            try
+            {
+                service.Shutdown();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, service);
+            }
         }
     }
 }

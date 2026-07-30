@@ -87,7 +87,15 @@ namespace Rutin.GameFramework.Core
             _active = active;
             if (active)
             {
-                OnFeatureActivated();
+                try
+                {
+                    OnFeatureActivated();
+                }
+                catch
+                {
+                    _active = false;
+                    throw;
+                }
             }
             else
             {

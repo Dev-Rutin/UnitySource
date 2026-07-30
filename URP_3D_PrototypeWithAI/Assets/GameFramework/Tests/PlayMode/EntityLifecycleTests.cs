@@ -141,6 +141,26 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
         }
 
+        private sealed class ThrowingActivationFeature : EntityFeature
+        {
+            public override int InitializationOrder => -100;
+
+            protected override void OnFeatureActivated()
+            {
+                throw new System.InvalidOperationException("Feature activation failure");
+            }
+        }
+
+        private sealed class ThrowingDeactivationFeature : EntityFeature
+        {
+            public override int InitializationOrder => 100;
+
+            protected override void OnFeatureDeactivated()
+            {
+                throw new System.InvalidOperationException("Feature deactivation failure");
+            }
+        }
+
         [DefaultExecutionOrder(-9001)]
         private sealed class PreEntityFeature : EntityFeature
         {
@@ -160,6 +180,34 @@ namespace Rutin.GameFramework.Tests.PlayMode
             protected override void OnServiceInitialized()
             {
                 InitializeCount++;
+            }
+        }
+
+        private sealed class ThrowingActivationService : GameServiceBehaviour
+        {
+            public override int InitializationOrder => -100;
+
+            protected override void OnServiceActivated()
+            {
+                throw new System.InvalidOperationException("Service activation failure");
+            }
+        }
+
+        private sealed class ThrowingDeactivationService : GameServiceBehaviour
+        {
+            public override int InitializationOrder => 100;
+
+            protected override void OnServiceDeactivated()
+            {
+                throw new System.InvalidOperationException("Service deactivation failure");
+            }
+        }
+
+        private sealed class ThrowingShutdownService : GameServiceBehaviour
+        {
+            protected override void OnServiceShutdown()
+            {
+                throw new System.InvalidOperationException("Service shutdown failure");
             }
         }
 
@@ -354,6 +402,41 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator FeatureActivationFailures_AreIsolatedAndStateRemainsConsistent()
+        {
+            GameObject entityObject = new("Feature Activation Isolation Entity");
+            entityObject.SetActive(false);
+            entityObject.AddComponent<GameplayEntity>();
+            ThrowingActivationFeature throwingActivation =
+                entityObject.AddComponent<ThrowingActivationFeature>();
+            ProbeFeature following = entityObject.AddComponent<ProbeFeature>();
+            ThrowingDeactivationFeature throwingDeactivation =
+                entityObject.AddComponent<ThrowingDeactivationFeature>();
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Feature activation failure"));
+            entityObject.SetActive(true);
+            yield return null;
+
+            Assert.That(throwingActivation.IsFeatureActive, Is.False);
+            Assert.That(following.IsFeatureActive, Is.True);
+            Assert.That(throwingDeactivation.IsFeatureActive, Is.True);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Feature deactivation failure"));
+            entityObject.SetActive(false);
+            yield return null;
+
+            Assert.That(following.IsFeatureActive, Is.False);
+            Assert.That(throwingDeactivation.IsFeatureActive, Is.False);
+
+            Object.Destroy(entityObject);
+            yield return null;
+        }
+
+        [UnityTest]
         public IEnumerator TickScheduler_PreservesRegistrationMadeBeforeHostInitialization()
         {
             GameObject hostObject = new("Early Tick Registration Host");
@@ -396,6 +479,50 @@ namespace Rutin.GameFramework.Tests.PlayMode
             host.enabled = true;
             yield return null;
             Assert.That(tickable.TickCount, Is.GreaterThan(activeTickCount));
+
+            Object.Destroy(hostObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ServiceLifecycleFailures_AreIsolatedAndDestroyedServiceIsRemoved()
+        {
+            GameObject hostObject = new("Service Lifecycle Isolation Host");
+            hostObject.SetActive(false);
+            GameManagerHost host = hostObject.AddComponent<GameManagerHost>();
+            ThrowingActivationService throwingActivation =
+                hostObject.AddComponent<ThrowingActivationService>();
+            FollowingService following = hostObject.AddComponent<FollowingService>();
+            ThrowingDeactivationService throwingDeactivation =
+                hostObject.AddComponent<ThrowingDeactivationService>();
+            ThrowingShutdownService throwingShutdown =
+                hostObject.AddComponent<ThrowingShutdownService>();
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Service activation failure"));
+            hostObject.SetActive(true);
+            yield return null;
+
+            Assert.That(throwingActivation.IsServiceActive, Is.False);
+            Assert.That(following.IsServiceActive, Is.True);
+            Assert.That(throwingDeactivation.IsServiceActive, Is.True);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Service shutdown failure"));
+            Object.Destroy(throwingShutdown);
+            yield return null;
+            Assert.That(host.ServiceCount, Is.EqualTo(3));
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Service deactivation failure"));
+            host.enabled = false;
+            yield return null;
+
+            Assert.That(following.IsServiceActive, Is.False);
+            Assert.That(throwingDeactivation.IsServiceActive, Is.False);
 
             Object.Destroy(hostObject);
             yield return null;

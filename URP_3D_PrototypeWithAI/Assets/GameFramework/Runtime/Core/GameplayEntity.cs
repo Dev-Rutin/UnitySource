@@ -54,7 +54,7 @@ namespace Rutin.GameFramework.Core
                 EntityFeature feature = _features[i];
                 if (feature != null && feature.isActiveAndEnabled)
                 {
-                    feature.SetFeatureActive(true);
+                    TrySetFeatureActive(feature, true);
                 }
             }
         }
@@ -64,7 +64,11 @@ namespace Rutin.GameFramework.Core
             _entityActive = false;
             for (int i = _features.Count - 1; i >= 0; i--)
             {
-                _features[i]?.SetFeatureActive(false);
+                EntityFeature feature = _features[i];
+                if (feature != null)
+                {
+                    TrySetFeatureActive(feature, false);
+                }
             }
         }
 
@@ -114,7 +118,7 @@ namespace Rutin.GameFramework.Core
 
             if (_entityActive && feature.isActiveAndEnabled)
             {
-                feature.SetFeatureActive(true);
+                TrySetFeatureActive(feature, true);
             }
         }
 
@@ -145,7 +149,7 @@ namespace Rutin.GameFramework.Core
         {
             if (!_isShuttingDown && _entityActive && ContainsReference(feature))
             {
-                feature.SetFeatureActive(true);
+                TrySetFeatureActive(feature, true);
             }
         }
 
@@ -153,7 +157,7 @@ namespace Rutin.GameFramework.Core
         {
             if (!_isShuttingDown && ContainsReference(feature))
             {
-                feature.SetFeatureActive(false);
+                TrySetFeatureActive(feature, false);
             }
         }
 
@@ -215,6 +219,18 @@ namespace Rutin.GameFramework.Core
             try
             {
                 feature.Unbind();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, feature);
+            }
+        }
+
+        private static void TrySetFeatureActive(EntityFeature feature, bool active)
+        {
+            try
+            {
+                feature.SetFeatureActive(active);
             }
             catch (System.Exception exception)
             {
