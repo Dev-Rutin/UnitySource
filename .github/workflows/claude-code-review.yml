@@ -27,6 +27,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD SHA: ${{ github.event.pull_request.head.sha }}
+
             아래 검수 지침에 따라 이 PR을 리뷰해줘.
 
             [검수 지침]
@@ -40,10 +44,22 @@ jobs:
                - 반영되지 않은 사항: 다시 언급
                - 새로 발견된 문제: 새 리뷰로 등록
                - 기존 지적 사항이 모두 반영되었고 새로운 문제가 없다면, 리뷰를 종료한다는
-                 취지로 짧게 코멘트한다 (승인 의미)
+                 취지로 짧게 정리한다.
+            4. 구체적인 파일과 라인에 대한 지적은
+               mcp__github_inline_comment__create_inline_comment 도구로 남긴다.
+               실제 지적만 confirmed: true 로 등록한다.
+            5. 검토가 끝나면 일반 PR 코멘트(gh pr comment)를 사용하지 말고,
+               현재 HEAD SHA에 대해 정확히 하나의 Submit review를 등록한다.
+               - 머지를 막아야 하는 문제가 있으면:
+                 gh pr review ${{ github.event.pull_request.number }} --request-changes
+               - 개선 의견만 있고 머지를 막을 필요가 없으면:
+                 gh pr review ${{ github.event.pull_request.number }} --comment
+               - 지적할 문제가 없으면:
+                 gh pr review ${{ github.event.pull_request.number }} --approve
+               각 명령에는 검토 결과를 요약한 review body를 반드시 포함한다.
 
-            리뷰 결과는 gh pr comment 로 PR에 남겨줘.
+            최종 결과는 반드시 GitHub의 정식 Submit review 상태로 남겨라.
           claude_args: |
             --max-turns 30
             --model claude-opus-5
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh pr:*),Bash(gh api:*)"
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh pr:*),Bash(gh api:*)"
