@@ -1,0 +1,48 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]  # PR 등록 + 새 커밋 push 시 트리거
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            아래 검수 지침에 따라 이 PR을 리뷰해줘.
+
+            [검수 지침]
+            1. 거시적인 관점에서 발생할 수 있는 문제 위주로 리뷰한다.
+               (아키텍처, 설계, 잠재적 버그, 성능/안정성에 영향을 줄 수 있는 큰 이슈 중심)
+            2. 너무 깊게 파고들어 미시적인 수준(변수명, 코드 스타일, 사소한 포맷팅 등)의
+               리뷰는 하지 않는다.
+            3. 이 PR에 이전 리뷰 코멘트가 이미 달려 있다면, 이번 diff(새 커밋)에서
+               해당 사항들이 반영되었는지 먼저 확인한다.
+               - 반영된 사항: 별도 언급 없이 넘어가거나 "반영 확인" 정도로만 짧게 표시
+               - 반영되지 않은 사항: 다시 언급
+               - 새로 발견된 문제: 새 리뷰로 등록
+               - 기존 지적 사항이 모두 반영되었고 새로운 문제가 없다면, 리뷰를 종료한다는
+                 취지로 짧게 코멘트한다 (승인 의미)
+
+            리뷰 결과는 gh pr comment 로 PR에 남겨줘.
+          claude_args: |
+            --max-turns 10
+            --model claude-opus-5
+            --allowedTools "Bash(gh pr:*),Bash(gh api:*)"
