@@ -1,0 +1,14 @@
+{
+  "name": "Rutin.GameFramework.Runtime",
+  "rootNamespace": "Rutin.GameFramework",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

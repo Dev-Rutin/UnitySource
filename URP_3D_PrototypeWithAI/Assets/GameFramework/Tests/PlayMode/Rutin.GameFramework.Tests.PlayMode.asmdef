@@ -1,0 +1,19 @@
+{
+  "name": "Rutin.GameFramework.Tests.PlayMode",
+  "rootNamespace": "Rutin.GameFramework.Tests.PlayMode",
+  "references": [
+    "Rutin.GameFramework.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
