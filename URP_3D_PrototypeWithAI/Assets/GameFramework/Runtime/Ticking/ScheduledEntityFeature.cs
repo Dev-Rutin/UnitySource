@@ -32,13 +32,18 @@ namespace Rutin.GameFramework.Ticking
                 _scheduler = null;
             }
 
-            if (reason != TickUnregistrationReason.Explicit)
+            if (reason == TickUnregistrationReason.Quarantined)
             {
                 Debug.LogWarning(
                     $"{GetType().Name} lost scheduler registration ({reason}). " +
                     "It will retry when the default service registry changes, when the " +
                     "feature is reactivated, or when SetTickScheduler is called.",
                     this);
+            }
+
+            if (reason != TickUnregistrationReason.Explicit)
+            {
+                OnSchedulerRegistrationLost(reason);
             }
         }
 
@@ -105,6 +110,11 @@ namespace Rutin.GameFramework.Ticking
         }
 
         protected virtual void OnScheduledFeatureShutdown()
+        {
+        }
+
+        protected virtual void OnSchedulerRegistrationLost(
+            TickUnregistrationReason reason)
         {
         }
 

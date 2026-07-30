@@ -34,7 +34,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   `PlayerCommandFeature` discovers the source once during initialization. Enable
   `lookValueIsAngularRate` for stick-style look actions; mouse-delta actions should leave it off.
   This adapter uses one local `Update()` to latch frame-only Input System edges and deltas so a
-  budget-delayed simulation tick cannot lose them.
+  budget-delayed simulation tick cannot lose them. Ownership, simulation, deactivation, and
+  scheduler-loss transitions discard the adapter's buffered input so stale edges cannot replay.
 - For remote/server control, call `SetLocallyControlled(false)` and submit immutable
   `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
   on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
@@ -47,7 +48,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   is budget-limited or swap-removes other entities. The motor integrates accumulated time using
   bounded fixed substeps.
 - `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
-  explicit movement space is configured, keeping view and locomotion axes aligned.
+  explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
+  run before the motor so movement uses the current command's yaw without a one-tick delay.
 - Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
 
 ## Factory and pooling
@@ -87,10 +89,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 25 passed, 0 failed | 0.191 s test duration |
-| PlayMode | 32 passed, 0 failed | 1.005 s test duration |
+| EditMode | 25 passed, 0 failed | 0.456 s test duration |
+| PlayMode | 34 passed, 0 failed | 1.056 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 108.405 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 99.474 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

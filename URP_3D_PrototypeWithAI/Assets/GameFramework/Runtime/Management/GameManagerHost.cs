@@ -136,7 +136,6 @@ namespace Rutin.GameFramework.Management
             if (ReferenceEquals(Default, this))
             {
                 Default = null;
-                NotifyDefaultServicesChanged();
             }
         }
 
@@ -321,7 +320,7 @@ namespace Rutin.GameFramework.Management
 
         private void NotifyDefaultServicesChanged()
         {
-            if (ReferenceEquals(Default, this) || Default == null)
+            if (ReferenceEquals(Default, this))
             {
                 DefaultServicesChanged?.Invoke();
             }

@@ -11,7 +11,8 @@ namespace Rutin.GameFramework.InputSystem
     [DisallowMultipleComponent]
     public sealed class InputSystemPlayerCommandSource :
         MonoBehaviour,
-        IPlayerCommandSource
+        IPlayerCommandSource,
+        IBufferedPlayerCommandSource
     {
         [SerializeField] private InputActionReference moveAction;
         [SerializeField] private InputActionReference lookAction;
@@ -113,6 +114,11 @@ namespace Rutin.GameFramework.InputSystem
             _pendingLook = Vector2.zero;
             _pendingJump = false;
             return command;
+        }
+
+        public void DiscardBufferedInput()
+        {
+            ClearBufferedInput();
         }
 
         private static Vector2 ReadVector2(InputActionReference reference)

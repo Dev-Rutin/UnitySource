@@ -55,6 +55,7 @@ namespace Rutin.GameFramework.Player
                 return;
             }
 
+            DiscardSourceBuffer();
             _source = source;
             ClearCommandState(true);
             ResetConsumers();
@@ -178,6 +179,13 @@ namespace Rutin.GameFramework.Player
         }
 
         protected override void OnScheduledFeatureDeactivated()
+        {
+            ClearCommandState(true);
+            ResetConsumers();
+        }
+
+        protected override void OnSchedulerRegistrationLost(
+            TickUnregistrationReason reason)
         {
             ClearCommandState(true);
             ResetConsumers();
@@ -340,6 +348,8 @@ namespace Rutin.GameFramework.Player
 
         private void ClearCommandState(bool resetSequence)
         {
+            DiscardSourceBuffer();
+
             _moveState = Vector2.zero;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
@@ -350,6 +360,14 @@ namespace Rutin.GameFramework.Player
             {
                 _hasAcceptedSequence = false;
                 _lastAcceptedSequence = 0;
+            }
+        }
+
+        private void DiscardSourceBuffer()
+        {
+            if (_source is IBufferedPlayerCommandSource bufferedSource)
+            {
+                bufferedSource.DiscardBufferedInput();
             }
         }
 

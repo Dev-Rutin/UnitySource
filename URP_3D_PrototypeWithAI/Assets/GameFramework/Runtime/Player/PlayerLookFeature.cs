@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Rutin.GameFramework.Player
 {
     /// <summary>
-    /// Applies command look deltas after simulation while preserving rig base rotations.
+    /// Applies command look deltas before movement while preserving rig base rotations.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(PlayerCommandFeature))]
@@ -29,7 +29,7 @@ namespace Rutin.GameFramework.Player
 
         public override int InitializationOrder => 100;
 
-        public int CommandOrder => 100;
+        public int CommandOrder => -100;
 
         public float Yaw => _yaw;
 

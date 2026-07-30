@@ -486,6 +486,33 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void LookFeature_AppliesCurrentYawBeforeMotorSimulation()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Look Driven Motor Player");
+            player.AddComponent<CharacterController>();
+            player.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            player.AddComponent<PlayerCharacterMotorFeature>();
+            PlayerLookFeature look = player.AddComponent<PlayerLookFeature>();
+            GameObject yawObject = CreateObject("Movement Yaw Root");
+            yawObject.transform.SetParent(player.transform, false);
+            look.SetViewTransforms(yawObject.transform, null);
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            player.SetActive(true);
+            commands.SubmitCommand(
+                new PlayerCommand(Vector2.up, new Vector2(90f, 0f), false));
+
+            scheduler.Tick(0.1f, 0d);
+
+            Assert.That(player.transform.position.x, Is.GreaterThan(0.01f));
+            Assert.That(
+                Mathf.Abs(player.transform.position.z),
+                Is.LessThan(0.001f));
+        }
+
+        [Test]
         public void InputSystemSource_LatchesFrameEdgesUntilSchedulerRead()
         {
             GameObject inputObject = CreateObject("Input Source");
@@ -511,6 +538,35 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(second.Move, Is.EqualTo(Vector2.right));
             Assert.That(second.Look, Is.EqualTo(Vector2.zero));
             Assert.That(second.JumpPressed, Is.False);
+        }
+
+        [Test]
+        public void InputSystemSource_DiscardsLatchedInputAcrossOwnershipChange()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Buffered Input Player");
+            player.AddComponent<GameplayEntity>();
+            InputSystemPlayerCommandSource source =
+                player.AddComponent<InputSystemPlayerCommandSource>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            ProbeCommandConsumer consumer = player.AddComponent<ProbeCommandConsumer>();
+            commands.SetTickScheduler(scheduler);
+            commands.SetCommandSource(source);
+            commands.RegisterConsumer(consumer);
+            player.SetActive(true);
+            source.BufferInputSample(
+                Vector2.up,
+                new Vector2(45f, 10f),
+                true,
+                0.016f);
+
+            commands.SetLocallyControlled(false);
+            commands.SetLocallyControlled(true);
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.False);
         }
 
         [Test]

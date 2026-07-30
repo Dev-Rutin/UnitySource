@@ -43,6 +43,15 @@ namespace Rutin.GameFramework.Player
     }
 
     /// <summary>
+    /// Optional contract for frame-latched sources that must discard stale edges when
+    /// ownership, simulation, or scheduler registration changes.
+    /// </summary>
+    public interface IBufferedPlayerCommandSource
+    {
+        void DiscardBufferedInput();
+    }
+
+    /// <summary>
     /// Deterministic consumer invoked by PlayerCommandFeature after input production.
     /// Lower order values run first.
     /// </summary>
