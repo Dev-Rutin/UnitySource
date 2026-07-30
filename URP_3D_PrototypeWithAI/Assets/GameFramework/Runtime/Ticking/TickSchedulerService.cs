@@ -35,6 +35,8 @@ namespace Rutin.GameFramework.Ticking
 
         public TickBatchStats LastFrameStats { get; private set; }
 
+        public long TotalQuarantinedCount { get; private set; }
+
         protected override void RegisterServiceContracts()
         {
             RegisterContract<ITickScheduler>();
@@ -43,6 +45,7 @@ namespace Rutin.GameFramework.Ticking
         protected override void OnServiceInitialized()
         {
             _hasShutDown = false;
+            TotalQuarantinedCount = 0;
             EnsureScheduler();
         }
 
@@ -52,6 +55,7 @@ namespace Rutin.GameFramework.Ticking
             _scheduler = null;
             _hasShutDown = true;
             _consecutiveSaturatedFrames = 0;
+            TotalQuarantinedCount = 0;
             LastFrameStats = default;
         }
 
@@ -67,6 +71,16 @@ namespace Rutin.GameFramework.Ticking
                 frameBudgetMilliseconds,
                 maxProcessedItemsPerFrame,
                 maxAccumulatedDeltaTime);
+            if (LastFrameStats.QuarantinedCount > 0)
+            {
+                TotalQuarantinedCount += LastFrameStats.QuarantinedCount;
+                Debug.LogWarning(
+                    $"{nameof(TickSchedulerService)} quarantined " +
+                    $"{LastFrameStats.QuarantinedCount} tickable(s) after repeated failures. " +
+                    $"Session total={TotalQuarantinedCount}.",
+                    this);
+            }
+
             UpdateSaturationDiagnostics();
         }
 

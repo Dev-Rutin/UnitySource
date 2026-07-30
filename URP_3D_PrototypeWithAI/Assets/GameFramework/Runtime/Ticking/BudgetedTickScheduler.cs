@@ -43,6 +43,7 @@ namespace Rutin.GameFramework.Ticking
         private readonly List<uint> _lastVisitedRounds;
         private readonly List<double> _lastTickTimes;
         private readonly List<int> _consecutiveFailures;
+        private readonly List<bool> _hasLoggedFailure;
         private readonly Dictionary<IGameTickable, int> _indices;
         private readonly int _failureQuarantineThreshold;
         private int _cursor;
@@ -69,6 +70,7 @@ namespace Rutin.GameFramework.Ticking
             _lastVisitedRounds = new List<uint>(initialCapacity);
             _lastTickTimes = new List<double>(initialCapacity);
             _consecutiveFailures = new List<int>(initialCapacity);
+            _hasLoggedFailure = new List<bool>(initialCapacity);
             _indices = new Dictionary<IGameTickable, int>(
                 initialCapacity,
                 ReferenceEqualityComparer<IGameTickable>.Instance);
@@ -94,6 +96,7 @@ namespace Rutin.GameFramework.Ticking
             _lastVisitedRounds.Add(_isTicking ? _currentRound : 0);
             _lastTickTimes.Add(_elapsedTime);
             _consecutiveFailures.Add(0);
+            _hasLoggedFailure.Add(false);
             _indices.Add(tickable, index);
             return true;
         }
@@ -111,6 +114,7 @@ namespace Rutin.GameFramework.Ticking
             uint lastVisitedRound = _lastVisitedRounds[lastIndex];
             double lastTickTime = _lastTickTimes[lastIndex];
             int consecutiveFailures = _consecutiveFailures[lastIndex];
+            bool hasLoggedFailure = _hasLoggedFailure[lastIndex];
 
             if (_isTicking && removedLastVisitedRound != _currentRound)
             {
@@ -121,6 +125,7 @@ namespace Rutin.GameFramework.Ticking
             _lastVisitedRounds.RemoveAt(lastIndex);
             _lastTickTimes.RemoveAt(lastIndex);
             _consecutiveFailures.RemoveAt(lastIndex);
+            _hasLoggedFailure.RemoveAt(lastIndex);
             _indices.Remove(tickable);
 
             if (index != lastIndex)
@@ -129,6 +134,7 @@ namespace Rutin.GameFramework.Ticking
                 _lastVisitedRounds[index] = lastVisitedRound;
                 _lastTickTimes[index] = lastTickTime;
                 _consecutiveFailures[index] = consecutiveFailures;
+                _hasLoggedFailure[index] = hasLoggedFailure;
                 _indices[last] = index;
             }
 
@@ -183,6 +189,7 @@ namespace Rutin.GameFramework.Ticking
                     }
 
                     IGameTickable tickable = _tickables[currentIndex];
+                    int failuresBeforeVisit = _consecutiveFailures[currentIndex];
                     _lastVisitedRounds[currentIndex] = _currentRound;
                     _remainingInRound--;
                     visited++;
@@ -213,7 +220,11 @@ namespace Rutin.GameFramework.Ticking
 
                     if (!isTickEnabled)
                     {
-                        ResetFailureCount(tickable);
+                        if (failuresBeforeVisit > 0)
+                        {
+                            ResetFailureCount(tickable);
+                        }
+
                         continue;
                     }
 
@@ -223,7 +234,10 @@ namespace Rutin.GameFramework.Ticking
                         tickable.Tick((float)Math.Min(
                             accumulatedDeltaTime,
                             maxAccumulatedDeltaTime));
-                        ResetFailureCount(tickable);
+                        if (failuresBeforeVisit > 0)
+                        {
+                            ResetFailureCount(tickable);
+                        }
                     }
                     catch (Exception exception)
                     {
@@ -260,6 +274,7 @@ namespace Rutin.GameFramework.Ticking
             _lastVisitedRounds.Clear();
             _lastTickTimes.Clear();
             _consecutiveFailures.Clear();
+            _hasLoggedFailure.Clear();
             _indices.Clear();
             _cursor = 0;
             _remainingInRound = 0;
@@ -293,10 +308,16 @@ namespace Rutin.GameFramework.Ticking
             IGameTickable tickable,
             Exception exception)
         {
-            Debug.LogException(exception, tickable as Object);
             if (!_indices.TryGetValue(tickable, out int index))
             {
+                Debug.LogException(exception, tickable as Object);
                 return false;
+            }
+
+            if (!_hasLoggedFailure[index])
+            {
+                Debug.LogException(exception, tickable as Object);
+                _hasLoggedFailure[index] = true;
             }
 
             int failureCount = _consecutiveFailures[index] + 1;

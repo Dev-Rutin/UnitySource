@@ -74,6 +74,22 @@ namespace Rutin.GameFramework.Tests.EditMode
             }
         }
 
+        private sealed class AlternatingFailureTickable : IGameTickable
+        {
+            private int _attemptCount;
+
+            public bool IsTickEnabled => true;
+
+            public void Tick(float deltaTime)
+            {
+                _attemptCount++;
+                if ((_attemptCount & 1) == 1)
+                {
+                    throw new InvalidOperationException("Alternating tick failure");
+                }
+            }
+        }
+
         [Test]
         public void Register_DeduplicatesByReference()
         {
@@ -240,15 +256,16 @@ namespace Rutin.GameFramework.Tests.EditMode
             scheduler.Register(new ThrowingTickable(false));
             scheduler.Register(healthy);
 
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick enabled failure"));
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Tick callback failure"));
+
             TickBatchStats stats = default;
             for (int i = 0; i < 3; i++)
             {
-                LogAssert.Expect(
-                    LogType.Exception,
-                    new System.Text.RegularExpressions.Regex("Tick enabled failure"));
-                LogAssert.Expect(
-                    LogType.Exception,
-                    new System.Text.RegularExpressions.Regex("Tick callback failure"));
                 stats = scheduler.Tick(0.016f, 0d);
             }
 
@@ -274,6 +291,24 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(transient.SuccessfulTickCount, Is.EqualTo(1));
             Assert.That(failedStats.QuarantinedCount, Is.Zero);
             Assert.That(recoveredStats.QuarantinedCount, Is.Zero);
+        }
+
+        [Test]
+        public void Tick_IntermittentFailuresLogOnlyOnceAndRemainRegistered()
+        {
+            BudgetedTickScheduler scheduler = new();
+            AlternatingFailureTickable intermittent = new();
+            scheduler.Register(intermittent);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Alternating tick failure"));
+            for (int i = 0; i < 6; i++)
+            {
+                scheduler.Tick(0.016f, 0d);
+            }
+
+            Assert.That(scheduler.Count, Is.EqualTo(1));
         }
     }
 }
