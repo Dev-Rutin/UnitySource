@@ -111,7 +111,7 @@ namespace Rutin.GameFramework.Ticking
 
         private void UpdateSaturationDiagnostics()
         {
-            if (LastFrameStats.VisitedCount >= LastFrameStats.RegisteredCount)
+            if (LastFrameStats.RoundCompleted)
             {
                 _consecutiveSaturatedFrames = 0;
                 return;

@@ -14,6 +14,8 @@ namespace Rutin.GameFramework.Factory
     {
         private readonly GameObject _prefab;
         private readonly Transform _inactiveRoot;
+        private readonly GameObject _creationRootObject;
+        private readonly Transform _creationRoot;
         private readonly int _maxSize;
         private readonly Stack<PooledInstance> _inactive;
         private readonly HashSet<PooledInstance> _inactiveInstances;
@@ -47,6 +49,10 @@ namespace Rutin.GameFramework.Factory
             _prefab = prefab;
             _inactiveRoot = inactiveRoot;
             _maxSize = maxSize;
+            _creationRootObject = new GameObject($"{prefab.name} Pool Creation Root");
+            _creationRootObject.SetActive(false);
+            _creationRoot = _creationRootObject.transform;
+            _creationRoot.SetParent(inactiveRoot, false);
             _inactive = new Stack<PooledInstance>(Math.Max(initialCapacity, 4));
             _inactiveInstances = new HashSet<PooledInstance>(
                 initialCapacity,
@@ -227,6 +233,17 @@ namespace Rutin.GameFramework.Factory
             _rentedInstances.Clear();
             _allInstances.Clear();
             _destroyedBuffer.Clear();
+            if (_creationRootObject != null)
+            {
+                if (Application.isPlaying)
+                {
+                    Object.Destroy(_creationRootObject);
+                }
+                else
+                {
+                    Object.DestroyImmediate(_creationRootObject);
+                }
+            }
         }
 
         internal void NotifyInstanceDestroyed(PooledInstance instance, bool wasRented)
@@ -247,8 +264,10 @@ namespace Rutin.GameFramework.Factory
 
         private PooledInstance CreateInstance()
         {
-            GameObject clone = Object.Instantiate(_prefab, _inactiveRoot, false);
+            GameObject clone = Object.Instantiate(_prefab, _creationRoot, false);
             clone.name = $"{_prefab.name} (Pooled)";
+            clone.SetActive(false);
+            clone.transform.SetParent(_inactiveRoot, false);
 
             if (!clone.TryGetComponent(out PooledInstance instance))
             {

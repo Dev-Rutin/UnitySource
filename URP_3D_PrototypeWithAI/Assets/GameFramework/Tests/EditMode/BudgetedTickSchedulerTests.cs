@@ -165,6 +165,7 @@ namespace Rutin.GameFramework.Tests.EditMode
 
             Assert.That(stats.RegisteredCount, Is.EqualTo(5));
             Assert.That(stats.VisitedCount, Is.EqualTo(3));
+            Assert.That(stats.RoundCompleted, Is.True);
             Assert.That(first.TickCount, Is.EqualTo(1));
             Assert.That(second.TickCount, Is.Zero);
             Assert.That(third.TickCount, Is.Zero);
@@ -314,6 +315,22 @@ namespace Rutin.GameFramework.Tests.EditMode
             }
 
             Assert.That(scheduler.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Tick_DisabledItemsRespectVisitBudget()
+        {
+            BudgetedTickScheduler scheduler = new();
+            for (int i = 0; i < 5; i++)
+            {
+                scheduler.Register(new ProbeTickable { IsTickEnabled = false });
+            }
+
+            TickBatchStats stats = scheduler.Tick(0.016f, 0d, 2);
+
+            Assert.That(stats.VisitedCount, Is.EqualTo(2));
+            Assert.That(stats.ProcessedCount, Is.Zero);
+            Assert.That(stats.RoundCompleted, Is.False);
         }
     }
 }

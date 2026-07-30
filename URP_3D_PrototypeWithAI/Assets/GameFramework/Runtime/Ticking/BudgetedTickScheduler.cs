@@ -14,12 +14,14 @@ namespace Rutin.GameFramework.Ticking
             int visitedCount,
             int processedCount,
             int quarantinedCount,
+            bool roundCompleted,
             double elapsedMilliseconds)
         {
             RegisteredCount = registeredCount;
             VisitedCount = visitedCount;
             ProcessedCount = processedCount;
             QuarantinedCount = quarantinedCount;
+            RoundCompleted = roundCompleted;
             ElapsedMilliseconds = elapsedMilliseconds;
         }
 
@@ -30,6 +32,8 @@ namespace Rutin.GameFramework.Ticking
         public int ProcessedCount { get; }
 
         public int QuarantinedCount { get; }
+
+        public bool RoundCompleted { get; }
 
         public double ElapsedMilliseconds { get; }
     }
@@ -161,19 +165,26 @@ namespace Rutin.GameFramework.Ticking
             int registeredCount = _tickables.Count;
             if (registeredCount == 0 || maxProcessedItems <= 0)
             {
-                return new TickBatchStats(registeredCount, 0, 0, 0, 0d);
+                return new TickBatchStats(
+                    registeredCount,
+                    0,
+                    0,
+                    0,
+                    registeredCount == 0,
+                    0d);
             }
 
             long startTimestamp = Stopwatch.GetTimestamp();
             int visited = 0;
             int processed = 0;
             int quarantined = 0;
+            bool roundCompleted = false;
             bool hasTimeBudget = timeBudgetMilliseconds > 0d;
             BeginRound(registeredCount);
 
             try
             {
-                while (_remainingInRound > 0 && processed < maxProcessedItems)
+                while (_remainingInRound > 0 && visited < maxProcessedItems)
                 {
                     if (_cursor >= _tickables.Count)
                     {
@@ -225,6 +236,12 @@ namespace Rutin.GameFramework.Ticking
                             ResetFailureCount(tickable);
                         }
 
+                        if (hasTimeBudget &&
+                            GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
+                        {
+                            break;
+                        }
+
                         continue;
                     }
 
@@ -253,6 +270,8 @@ namespace Rutin.GameFramework.Ticking
                         break;
                     }
                 }
+
+                roundCompleted = _remainingInRound == 0;
             }
             finally
             {
@@ -265,6 +284,7 @@ namespace Rutin.GameFramework.Ticking
                 visited,
                 processed,
                 quarantined,
+                roundCompleted,
                 GetElapsedMilliseconds(startTimestamp));
         }
 

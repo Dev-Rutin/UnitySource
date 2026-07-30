@@ -9,11 +9,65 @@ using UnityEngine.TestTools;
 
 namespace Rutin.GameFramework.Tests.PlayMode
 {
+    public sealed class PoolLifecycleProbe : MonoBehaviour, IPoolable
+    {
+        public static readonly List<string> Events = new();
+
+        private void OnEnable()
+        {
+            Events.Add("OnEnable");
+        }
+
+        public void OnRentFromPool()
+        {
+            Events.Add("OnRentFromPool");
+        }
+
+        public void OnReturnToPool()
+        {
+        }
+    }
+
     public sealed class PoolStressPerformanceTests
     {
         private const int DefaultObjectCount = 5000;
         private const double DefaultCycleBudgetMilliseconds = 1000d;
         private const long DefaultAllocationBudgetBytes = 2 * 1024 * 1024;
+
+        [UnityTest]
+        public IEnumerator ActivePrefab_FirstAndReusedRentUseSameLifecycleOrder()
+        {
+            GameObject prefab = new("Active Pool Prefab");
+            prefab.SetActive(false);
+            prefab.AddComponent<PoolLifecycleProbe>();
+            prefab.SetActive(true);
+            PoolLifecycleProbe.Events.Clear();
+
+            GameObject root = new("Active Pool Root");
+            GameObjectPool pool = new(prefab, root.transform, 0, 1);
+            try
+            {
+                PooledInstance first = pool.Rent(Vector3.zero, Quaternion.identity);
+                Assert.That(
+                    PoolLifecycleProbe.Events,
+                    Is.EqualTo(new[] { "OnRentFromPool", "OnEnable" }));
+
+                pool.Release(first);
+                PoolLifecycleProbe.Events.Clear();
+                pool.Rent(Vector3.zero, Quaternion.identity);
+                Assert.That(
+                    PoolLifecycleProbe.Events,
+                    Is.EqualTo(new[] { "OnRentFromPool", "OnEnable" }));
+            }
+            finally
+            {
+                pool.Dispose();
+                UnityEngine.Object.Destroy(prefab);
+                UnityEngine.Object.Destroy(root);
+            }
+
+            yield return null;
+        }
 
         [UnityTest]
         public IEnumerator WarmPool_ActivatesAndReturnsLargeBatchWithinBudget()

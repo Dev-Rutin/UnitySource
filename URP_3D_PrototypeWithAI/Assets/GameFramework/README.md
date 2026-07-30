@@ -54,9 +54,9 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 20 passed, 0 failed | 0.320 s test duration |
-| PlayMode | 14 passed, 0 failed | 1.047 s test duration |
-| 5,000-object pooled rent/return | Passed | 150.832 ms, 0 managed bytes |
+| EditMode | 21 passed, 0 failed | 0.185 s test duration |
+| PlayMode | 15 passed, 0 failed | 1.028 s test duration |
+| 5,000-object pooled rent/return | Passed | 97.865 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
