@@ -8,6 +8,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Implement each capability as an `EntityFeature` and add/remove that component as needed.
 - Features receive deterministic initialize, activate, deactivate, and shutdown callbacks.
 - Avoid per-feature `Update()`. Implement `IGameTickable` and register it once with `ITickScheduler`.
+- Size `frameBudgetMilliseconds` and `maxVisitedItemsPerFrame` for the full registered
+  population. Disabled tickables still consume one visit from the item budget.
 - `TickSchedulerService` quarantines only repeated failures, rate-limits exception logs,
   and exposes the session total through `TotalQuarantinedCount`.
 
@@ -26,6 +28,8 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Use `TryRent` in gameplay hot paths so capacity exhaustion does not throw.
 - Return objects through `PooledInstance.ReturnToPool()` or the factory.
 - Implement `IPoolable` for deterministic state reset. Callback lists are cached per instance.
+- `OnRentFromPool()` always precedes `OnEnable`, but a clone's first rent can precede `Awake`.
+  Lazily initialize any callback dependency that would otherwise be cached only in `Awake`.
 - Call `PooledInstance.RefreshCallbacks()` only after changing a pooled hierarchy at runtime.
 
 ## Performance test
@@ -54,9 +58,9 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 21 passed, 0 failed | 0.185 s test duration |
-| PlayMode | 15 passed, 0 failed | 1.028 s test duration |
-| 5,000-object pooled rent/return | Passed | 97.865 ms, 0 managed bytes |
+| EditMode | 21 passed, 0 failed | 0.159 s test duration |
+| PlayMode | 15 passed, 0 failed | 0.976 s test duration |
+| 5,000-object pooled rent/return | Passed | 113.496 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

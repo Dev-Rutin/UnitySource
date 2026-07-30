@@ -13,6 +13,11 @@ namespace Rutin.GameFramework.Tests.PlayMode
     {
         public static readonly List<string> Events = new();
 
+        private void Awake()
+        {
+            Events.Add("Awake");
+        }
+
         private void OnEnable()
         {
             Events.Add("OnEnable");
@@ -35,7 +40,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
         private const long DefaultAllocationBudgetBytes = 2 * 1024 * 1024;
 
         [UnityTest]
-        public IEnumerator ActivePrefab_FirstAndReusedRentUseSameLifecycleOrder()
+        public IEnumerator ActivePrefab_RentCallbacksFollowDocumentedLifecycleOrder()
         {
             GameObject prefab = new("Active Pool Prefab");
             prefab.SetActive(false);
@@ -50,7 +55,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 PooledInstance first = pool.Rent(Vector3.zero, Quaternion.identity);
                 Assert.That(
                     PoolLifecycleProbe.Events,
-                    Is.EqualTo(new[] { "OnRentFromPool", "OnEnable" }));
+                    Is.EqualTo(new[] { "OnRentFromPool", "Awake", "OnEnable" }));
 
                 pool.Release(first);
                 PoolLifecycleProbe.Events.Clear();

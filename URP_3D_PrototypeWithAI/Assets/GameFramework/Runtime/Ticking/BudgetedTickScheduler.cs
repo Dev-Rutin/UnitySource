@@ -150,10 +150,14 @@ namespace Rutin.GameFramework.Ticking
             return true;
         }
 
+        /// <summary>
+        /// Visits registered tickables within both elapsed-time and item-count budgets.
+        /// Disabled registrations consume the visit budget even though they are not processed.
+        /// </summary>
         public TickBatchStats Tick(
             float deltaTime,
             double timeBudgetMilliseconds,
-            int maxProcessedItems = int.MaxValue,
+            int maxVisitedItems = int.MaxValue,
             float maxAccumulatedDeltaTime = float.PositiveInfinity)
         {
             if (maxAccumulatedDeltaTime < 0f)
@@ -163,7 +167,7 @@ namespace Rutin.GameFramework.Ticking
 
             _elapsedTime += Math.Max(0f, deltaTime);
             int registeredCount = _tickables.Count;
-            if (registeredCount == 0 || maxProcessedItems <= 0)
+            if (registeredCount == 0 || maxVisitedItems <= 0)
             {
                 return new TickBatchStats(
                     registeredCount,
@@ -184,7 +188,7 @@ namespace Rutin.GameFramework.Ticking
 
             try
             {
-                while (_remainingInRound > 0 && visited < maxProcessedItems)
+                while (_remainingInRound > 0 && visited < maxVisitedItems)
                 {
                     if (_cursor >= _tickables.Count)
                     {

@@ -1,5 +1,6 @@
 using Rutin.GameFramework.Management;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Rutin.GameFramework.Ticking
 {
@@ -13,7 +14,8 @@ namespace Rutin.GameFramework.Ticking
         [SerializeField] private float frameBudgetMilliseconds = 2f;
 
         [Min(1)]
-        [SerializeField] private int maxProcessedItemsPerFrame = 4096;
+        [FormerlySerializedAs("maxProcessedItemsPerFrame")]
+        [SerializeField] private int maxVisitedItemsPerFrame = 4096;
 
         [Min(1)]
         [SerializeField] private int initialCapacity = 1024;
@@ -68,7 +70,7 @@ namespace Rutin.GameFramework.Ticking
             LastFrameStats = _scheduler.Tick(
                 Time.deltaTime,
                 frameBudgetMilliseconds,
-                maxProcessedItemsPerFrame,
+                maxVisitedItemsPerFrame,
                 maxAccumulatedDeltaTime);
             if (LastFrameStats.QuarantinedCount > 0)
             {
