@@ -54,6 +54,26 @@ namespace Rutin.GameFramework.Tests.EditMode
             }
         }
 
+        private sealed class FailOnceTickable : IGameTickable
+        {
+            private bool _shouldFail = true;
+
+            public bool IsTickEnabled => true;
+
+            public int SuccessfulTickCount { get; private set; }
+
+            public void Tick(float deltaTime)
+            {
+                if (_shouldFail)
+                {
+                    _shouldFail = false;
+                    throw new InvalidOperationException("Transient tick failure");
+                }
+
+                SuccessfulTickCount++;
+            }
+        }
+
         [Test]
         public void Register_DeduplicatesByReference()
         {
@@ -220,17 +240,40 @@ namespace Rutin.GameFramework.Tests.EditMode
             scheduler.Register(new ThrowingTickable(false));
             scheduler.Register(healthy);
 
-            LogAssert.Expect(
-                LogType.Exception,
-                new System.Text.RegularExpressions.Regex("Tick enabled failure"));
-            LogAssert.Expect(
-                LogType.Exception,
-                new System.Text.RegularExpressions.Regex("Tick callback failure"));
+            TickBatchStats stats = default;
+            for (int i = 0; i < 3; i++)
+            {
+                LogAssert.Expect(
+                    LogType.Exception,
+                    new System.Text.RegularExpressions.Regex("Tick enabled failure"));
+                LogAssert.Expect(
+                    LogType.Exception,
+                    new System.Text.RegularExpressions.Regex("Tick callback failure"));
+                stats = scheduler.Tick(0.016f, 0d);
+            }
 
-            scheduler.Tick(0.016f, 0d);
-
-            Assert.That(healthy.TickCount, Is.EqualTo(1));
+            Assert.That(healthy.TickCount, Is.EqualTo(3));
             Assert.That(scheduler.Count, Is.EqualTo(1));
+            Assert.That(stats.QuarantinedCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void Tick_TransientFailureDoesNotPermanentlyRemoveTickable()
+        {
+            BudgetedTickScheduler scheduler = new();
+            FailOnceTickable transient = new();
+            scheduler.Register(transient);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Transient tick failure"));
+            TickBatchStats failedStats = scheduler.Tick(0.016f, 0d);
+            TickBatchStats recoveredStats = scheduler.Tick(0.016f, 0d);
+
+            Assert.That(scheduler.Count, Is.EqualTo(1));
+            Assert.That(transient.SuccessfulTickCount, Is.EqualTo(1));
+            Assert.That(failedStats.QuarantinedCount, Is.Zero);
+            Assert.That(recoveredStats.QuarantinedCount, Is.Zero);
         }
     }
 }

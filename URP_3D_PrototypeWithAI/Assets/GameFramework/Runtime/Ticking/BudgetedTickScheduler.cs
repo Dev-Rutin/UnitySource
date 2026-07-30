@@ -13,11 +13,13 @@ namespace Rutin.GameFramework.Ticking
             int registeredCount,
             int visitedCount,
             int processedCount,
+            int quarantinedCount,
             double elapsedMilliseconds)
         {
             RegisteredCount = registeredCount;
             VisitedCount = visitedCount;
             ProcessedCount = processedCount;
+            QuarantinedCount = quarantinedCount;
             ElapsedMilliseconds = elapsedMilliseconds;
         }
 
@@ -26,6 +28,8 @@ namespace Rutin.GameFramework.Ticking
         public int VisitedCount { get; }
 
         public int ProcessedCount { get; }
+
+        public int QuarantinedCount { get; }
 
         public double ElapsedMilliseconds { get; }
     }
@@ -38,26 +42,37 @@ namespace Rutin.GameFramework.Ticking
         private readonly List<IGameTickable> _tickables;
         private readonly List<uint> _lastVisitedRounds;
         private readonly List<double> _lastTickTimes;
+        private readonly List<int> _consecutiveFailures;
         private readonly Dictionary<IGameTickable, int> _indices;
+        private readonly int _failureQuarantineThreshold;
         private int _cursor;
         private uint _currentRound;
         private int _remainingInRound;
         private bool _isTicking;
         private double _elapsedTime;
 
-        public BudgetedTickScheduler(int initialCapacity = 256)
+        public BudgetedTickScheduler(
+            int initialCapacity = 256,
+            int failureQuarantineThreshold = 3)
         {
             if (initialCapacity < 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(initialCapacity));
             }
 
+            if (failureQuarantineThreshold < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(failureQuarantineThreshold));
+            }
+
             _tickables = new List<IGameTickable>(initialCapacity);
             _lastVisitedRounds = new List<uint>(initialCapacity);
             _lastTickTimes = new List<double>(initialCapacity);
+            _consecutiveFailures = new List<int>(initialCapacity);
             _indices = new Dictionary<IGameTickable, int>(
                 initialCapacity,
                 ReferenceEqualityComparer<IGameTickable>.Instance);
+            _failureQuarantineThreshold = failureQuarantineThreshold;
         }
 
         public int Count => _tickables.Count;
@@ -78,6 +93,7 @@ namespace Rutin.GameFramework.Ticking
             _tickables.Add(tickable);
             _lastVisitedRounds.Add(_isTicking ? _currentRound : 0);
             _lastTickTimes.Add(_elapsedTime);
+            _consecutiveFailures.Add(0);
             _indices.Add(tickable, index);
             return true;
         }
@@ -94,6 +110,7 @@ namespace Rutin.GameFramework.Ticking
             uint removedLastVisitedRound = _lastVisitedRounds[index];
             uint lastVisitedRound = _lastVisitedRounds[lastIndex];
             double lastTickTime = _lastTickTimes[lastIndex];
+            int consecutiveFailures = _consecutiveFailures[lastIndex];
 
             if (_isTicking && removedLastVisitedRound != _currentRound)
             {
@@ -103,6 +120,7 @@ namespace Rutin.GameFramework.Ticking
             _tickables.RemoveAt(lastIndex);
             _lastVisitedRounds.RemoveAt(lastIndex);
             _lastTickTimes.RemoveAt(lastIndex);
+            _consecutiveFailures.RemoveAt(lastIndex);
             _indices.Remove(tickable);
 
             if (index != lastIndex)
@@ -110,6 +128,7 @@ namespace Rutin.GameFramework.Ticking
                 _tickables[index] = last;
                 _lastVisitedRounds[index] = lastVisitedRound;
                 _lastTickTimes[index] = lastTickTime;
+                _consecutiveFailures[index] = consecutiveFailures;
                 _indices[last] = index;
             }
 
@@ -136,12 +155,13 @@ namespace Rutin.GameFramework.Ticking
             int registeredCount = _tickables.Count;
             if (registeredCount == 0 || maxProcessedItems <= 0)
             {
-                return new TickBatchStats(registeredCount, 0, 0, 0d);
+                return new TickBatchStats(registeredCount, 0, 0, 0, 0d);
             }
 
             long startTimestamp = Stopwatch.GetTimestamp();
             int visited = 0;
             int processed = 0;
+            int quarantined = 0;
             bool hasTimeBudget = timeBudgetMilliseconds > 0d;
             BeginRound(registeredCount);
 
@@ -177,7 +197,11 @@ namespace Rutin.GameFramework.Ticking
                     }
                     catch (Exception exception)
                     {
-                        QuarantineFailedTickable(tickable, exception);
+                        if (HandleTickFailure(tickable, exception))
+                        {
+                            quarantined++;
+                        }
+
                         if (hasTimeBudget &&
                             GetElapsedMilliseconds(startTimestamp) >= timeBudgetMilliseconds)
                         {
@@ -189,6 +213,7 @@ namespace Rutin.GameFramework.Ticking
 
                     if (!isTickEnabled)
                     {
+                        ResetFailureCount(tickable);
                         continue;
                     }
 
@@ -198,10 +223,14 @@ namespace Rutin.GameFramework.Ticking
                         tickable.Tick((float)Math.Min(
                             accumulatedDeltaTime,
                             maxAccumulatedDeltaTime));
+                        ResetFailureCount(tickable);
                     }
                     catch (Exception exception)
                     {
-                        QuarantineFailedTickable(tickable, exception);
+                        if (HandleTickFailure(tickable, exception))
+                        {
+                            quarantined++;
+                        }
                     }
 
                     if (hasTimeBudget &&
@@ -221,6 +250,7 @@ namespace Rutin.GameFramework.Ticking
                 registeredCount,
                 visited,
                 processed,
+                quarantined,
                 GetElapsedMilliseconds(startTimestamp));
         }
 
@@ -229,6 +259,7 @@ namespace Rutin.GameFramework.Ticking
             _tickables.Clear();
             _lastVisitedRounds.Clear();
             _lastTickTimes.Clear();
+            _consecutiveFailures.Clear();
             _indices.Clear();
             _cursor = 0;
             _remainingInRound = 0;
@@ -258,12 +289,33 @@ namespace Rutin.GameFramework.Ticking
             return elapsedTicks * 1000d / Stopwatch.Frequency;
         }
 
-        private void QuarantineFailedTickable(
+        private bool HandleTickFailure(
             IGameTickable tickable,
             Exception exception)
         {
             Debug.LogException(exception, tickable as Object);
+            if (!_indices.TryGetValue(tickable, out int index))
+            {
+                return false;
+            }
+
+            int failureCount = _consecutiveFailures[index] + 1;
+            _consecutiveFailures[index] = failureCount;
+            if (failureCount < _failureQuarantineThreshold)
+            {
+                return false;
+            }
+
             Unregister(tickable);
+            return true;
+        }
+
+        private void ResetFailureCount(IGameTickable tickable)
+        {
+            if (_indices.TryGetValue(tickable, out int index))
+            {
+                _consecutiveFailures[index] = 0;
+            }
         }
     }
 }

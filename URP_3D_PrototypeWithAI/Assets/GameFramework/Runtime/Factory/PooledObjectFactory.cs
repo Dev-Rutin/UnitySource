@@ -118,6 +118,12 @@ namespace Rutin.GameFramework.Factory
             Quaternion rotation,
             Transform parent = null)
         {
+            if (_hasShutDown)
+            {
+                instance = null;
+                return false;
+            }
+
             if (!_initialized)
             {
                 Initialize();

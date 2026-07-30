@@ -24,6 +24,9 @@ namespace Rutin.GameFramework.Ticking
         [Min(1)]
         [SerializeField] private int saturationWarningFrameThreshold = 120;
 
+        [Min(1)]
+        [SerializeField] private int failureQuarantineThreshold = 3;
+
         private BudgetedTickScheduler _scheduler;
         private bool _hasShutDown;
         private int _consecutiveSaturatedFrames;
@@ -87,7 +90,9 @@ namespace Rutin.GameFramework.Ticking
 
         private BudgetedTickScheduler EnsureScheduler()
         {
-            _scheduler ??= new BudgetedTickScheduler(initialCapacity);
+            _scheduler ??= new BudgetedTickScheduler(
+                initialCapacity,
+                Mathf.Max(1, failureQuarantineThreshold));
             return _scheduler;
         }
 
