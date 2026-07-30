@@ -67,6 +67,6 @@ jobs:
 
             최종 결과는 반드시 GitHub의 정식 Submit review 상태로 남겨라.
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --model claude-opus-5
             --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh pr:*),Bash(gh api:*)"
