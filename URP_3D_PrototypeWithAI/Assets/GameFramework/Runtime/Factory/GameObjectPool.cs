@@ -21,6 +21,7 @@ namespace Rutin.GameFramework.Factory
         private readonly HashSet<PooledInstance> _allInstances;
         private readonly List<PooledInstance> _destroyedBuffer;
         private bool _disposed;
+        private bool _compactionAttemptedAtCapacity;
 
         public GameObjectPool(
             GameObject prefab,
@@ -62,32 +63,11 @@ namespace Rutin.GameFramework.Factory
             Warmup(initialCapacity);
         }
 
-        public int CountAll
-        {
-            get
-            {
-                PruneDestroyedInstances();
-                return _allInstances.Count;
-            }
-        }
+        public int CountAll => _allInstances.Count;
 
-        public int CountInactive
-        {
-            get
-            {
-                PruneDestroyedInstances();
-                return _inactiveInstances.Count;
-            }
-        }
+        public int CountInactive => _inactiveInstances.Count;
 
-        public int CountRented
-        {
-            get
-            {
-                PruneDestroyedInstances();
-                return _rentedInstances.Count;
-            }
-        }
+        public int CountRented => _rentedInstances.Count;
 
         public int MaxSize => _maxSize;
 
@@ -123,7 +103,12 @@ namespace Rutin.GameFramework.Factory
             {
                 if (_allInstances.Count >= _maxSize)
                 {
-                    PruneDestroyedInstances();
+                    if (!_compactionAttemptedAtCapacity)
+                    {
+                        CompactDestroyedInstances();
+                        _compactionAttemptedAtCapacity = true;
+                    }
+
                     if (_allInstances.Count >= _maxSize)
                     {
                         return false;
@@ -173,7 +158,43 @@ namespace Rutin.GameFramework.Factory
             _inactive.Push(instance);
             _inactiveInstances.Add(instance);
             _rentedInstances.Remove(instance);
+            _compactionAttemptedAtCapacity = false;
             return true;
+        }
+
+        /// <summary>
+        /// Performs an explicit O(n) maintenance pass for Unity objects destroyed without
+        /// reaching their lifecycle callback. Normal rent, release, and count paths stay O(1).
+        /// </summary>
+        public int CompactDestroyedInstances()
+        {
+            ThrowIfDisposed();
+
+            if (_allInstances.Count == 0)
+            {
+                return 0;
+            }
+
+            _destroyedBuffer.Clear();
+            foreach (PooledInstance instance in _allInstances)
+            {
+                if (instance == null)
+                {
+                    _destroyedBuffer.Add(instance);
+                }
+            }
+
+            int removedCount = _destroyedBuffer.Count;
+            for (int i = 0; i < removedCount; i++)
+            {
+                PooledInstance destroyed = _destroyedBuffer[i];
+                _allInstances.Remove(destroyed);
+                _inactiveInstances.Remove(destroyed);
+                _rentedInstances.Remove(destroyed);
+            }
+
+            _destroyedBuffer.Clear();
+            return removedCount;
         }
 
         public void Dispose()
@@ -220,6 +241,8 @@ namespace Rutin.GameFramework.Factory
             {
                 _rentedInstances.Remove(instance);
             }
+
+            _compactionAttemptedAtCapacity = false;
         }
 
         private PooledInstance CreateInstance()
@@ -234,6 +257,7 @@ namespace Rutin.GameFramework.Factory
 
             instance.Initialize(this);
             _allInstances.Add(instance);
+            _compactionAttemptedAtCapacity = false;
             return instance;
         }
 
@@ -254,36 +278,10 @@ namespace Rutin.GameFramework.Factory
 
                 _allInstances.Remove(candidate);
                 _rentedInstances.Remove(candidate);
+                _compactionAttemptedAtCapacity = false;
             }
 
             return null;
-        }
-
-        private void PruneDestroyedInstances()
-        {
-            if (_disposed || _allInstances.Count == 0)
-            {
-                return;
-            }
-
-            _destroyedBuffer.Clear();
-            foreach (PooledInstance instance in _allInstances)
-            {
-                if (instance == null)
-                {
-                    _destroyedBuffer.Add(instance);
-                }
-            }
-
-            for (int i = 0; i < _destroyedBuffer.Count; i++)
-            {
-                PooledInstance destroyed = _destroyedBuffer[i];
-                _allInstances.Remove(destroyed);
-                _inactiveInstances.Remove(destroyed);
-                _rentedInstances.Remove(destroyed);
-            }
-
-            _destroyedBuffer.Clear();
         }
 
         private void ThrowIfDisposed()

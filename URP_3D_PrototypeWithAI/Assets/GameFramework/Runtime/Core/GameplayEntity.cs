@@ -25,12 +25,22 @@ namespace Rutin.GameFramework.Core
 
             for (int i = 0; i < _discoveryBuffer.Count; i++)
             {
-                InsertFeatureSorted(_discoveryBuffer[i]);
+                EntityFeature feature = _discoveryBuffer[i];
+                if (!feature.HasInitializationFailed && !ContainsReference(feature))
+                {
+                    InsertFeatureSorted(feature);
+                }
             }
 
-            for (int i = 0; i < _features.Count; i++)
+            for (int i = 0; i < _features.Count;)
             {
-                _features[i].Bind(this);
+                if (TryBindFeature(_features[i]))
+                {
+                    i++;
+                    continue;
+                }
+
+                _features.RemoveAt(i);
             }
 
             _discoveryBuffer.Clear();
@@ -87,20 +97,19 @@ namespace Rutin.GameFramework.Core
 
         internal void RegisterFeature(EntityFeature feature)
         {
-            if (feature == null || _isShuttingDown || ContainsReference(feature))
+            if (feature == null ||
+                feature.HasInitializationFailed ||
+                _isShuttingDown ||
+                ContainsReference(feature))
             {
                 return;
             }
 
             InsertFeatureSorted(feature);
-            try
-            {
-                feature.Bind(this);
-            }
-            catch
+            if (!TryBindFeature(feature))
             {
                 _features.Remove(feature);
-                throw;
+                return;
             }
 
             if (_entityActive && feature.isActiveAndEnabled)
@@ -174,6 +183,20 @@ namespace Rutin.GameFramework.Core
             }
 
             _features.Insert(insertIndex, feature);
+        }
+
+        private bool TryBindFeature(EntityFeature feature)
+        {
+            try
+            {
+                feature.Bind(this);
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, feature);
+                return false;
+            }
         }
     }
 }

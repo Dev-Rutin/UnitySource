@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using Object = UnityEngine.Object;
 
 namespace Rutin.GameFramework.Management
 {
@@ -54,7 +53,11 @@ namespace Rutin.GameFramework.Management
             GetComponents(_discoveryBuffer);
             for (int i = 0; i < _discoveryBuffer.Count; i++)
             {
-                InsertServiceSorted(_discoveryBuffer[i]);
+                GameServiceBehaviour service = _discoveryBuffer[i];
+                if (!service.HasInitializationFailed && IndexOfReference(service) < 0)
+                {
+                    InsertServiceSorted(service);
+                }
             }
 
             for (int i = 0; i < _services.Count;)
@@ -239,17 +242,39 @@ namespace Rutin.GameFramework.Management
             _isShuttingDown = true;
             Debug.LogError(
                 $"Duplicate default GameManagerHost '{name}' was rejected. " +
-                $"The existing host '{Default.name}' remains authoritative.",
+                $"The existing host '{Default.name}' remains authoritative. " +
+                "Only framework host and service components on the duplicate object were disabled.",
                 this);
 
-            if (Application.isPlaying)
+            for (int i = _services.Count - 1; i >= 0; i--)
             {
-                Object.Destroy(gameObject);
+                GameServiceBehaviour service = _services[i];
+                if (service == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    service.Shutdown();
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogException(exception, service);
+                }
             }
-            else
+
+            _services.Clear();
+            Services.Clear();
+            enabled = false;
+            _discoveryBuffer.Clear();
+            GetComponents(_discoveryBuffer);
+            for (int i = 0; i < _discoveryBuffer.Count; i++)
             {
-                Object.DestroyImmediate(gameObject);
+                _discoveryBuffer[i].enabled = false;
             }
+
+            _discoveryBuffer.Clear();
         }
     }
 }

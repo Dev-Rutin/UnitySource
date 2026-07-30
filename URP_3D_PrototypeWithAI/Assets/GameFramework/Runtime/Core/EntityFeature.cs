@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace Rutin.GameFramework.Core
@@ -12,12 +13,15 @@ namespace Rutin.GameFramework.Core
         private GameplayEntity _owner;
         private bool _initialized;
         private bool _active;
+        private bool _initializationFailed;
 
         public GameplayEntity Owner => _owner;
 
         public bool IsFeatureInitialized => _initialized;
 
         public bool IsFeatureActive => _active;
+
+        internal bool HasInitializationFailed => _initializationFailed;
 
         /// <summary>
         /// Lower values initialize first and shut down last.
@@ -60,7 +64,17 @@ namespace Rutin.GameFramework.Core
             }
 
             _initialized = true;
-            OnFeatureInitialized();
+            _initializationFailed = false;
+            try
+            {
+                OnFeatureInitialized();
+            }
+            catch
+            {
+                RollbackFailedBind();
+                _initializationFailed = true;
+                throw;
+            }
         }
 
         internal void SetFeatureActive(bool active)
@@ -91,6 +105,22 @@ namespace Rutin.GameFramework.Core
 
             SetFeatureActive(false);
             OnFeatureShutdown();
+            _initialized = false;
+            _owner = null;
+        }
+
+        private void RollbackFailedBind()
+        {
+            try
+            {
+                SetFeatureActive(false);
+                OnFeatureShutdown();
+            }
+            catch (Exception rollbackException)
+            {
+                Debug.LogException(rollbackException, this);
+            }
+
             _initialized = false;
             _owner = null;
         }

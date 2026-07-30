@@ -108,6 +108,41 @@ namespace Rutin.GameFramework.Tests.PlayMode
             public override int InitializationOrder => 100;
         }
 
+        private sealed class FailingFeature : EntityFeature
+        {
+            protected override void OnFeatureInitialized()
+            {
+                throw new System.InvalidOperationException("Feature initialization failure");
+            }
+        }
+
+        private sealed class FollowingFeature : EntityFeature
+        {
+            public override int InitializationOrder => 100;
+        }
+
+        [DefaultExecutionOrder(-9001)]
+        private sealed class PreEntityFeature : EntityFeature
+        {
+            public int InitializeCount { get; private set; }
+
+            protected override void OnFeatureInitialized()
+            {
+                InitializeCount++;
+            }
+        }
+
+        [DefaultExecutionOrder(-10001)]
+        private sealed class PreHostService : GameServiceBehaviour
+        {
+            public int InitializeCount { get; private set; }
+
+            protected override void OnServiceInitialized()
+            {
+                InitializeCount++;
+            }
+        }
+
         private sealed class ProbeTickable : IGameTickable
         {
             public bool IsTickEnabled => true;
@@ -214,6 +249,61 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator FailedFeatureInitialization_RollsBackAndContinues()
+        {
+            GameObject entityObject = new("Feature Failure Isolation Entity");
+            entityObject.SetActive(false);
+            GameplayEntity entity = entityObject.AddComponent<GameplayEntity>();
+            FailingFeature failing = entityObject.AddComponent<FailingFeature>();
+            FollowingFeature following = entityObject.AddComponent<FollowingFeature>();
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Feature initialization failure"));
+
+            entityObject.SetActive(true);
+            yield return null;
+
+            Assert.That(failing.IsFeatureInitialized, Is.False);
+            Assert.That(following.IsFeatureInitialized, Is.True);
+            Assert.That(entity.FeatureCount, Is.EqualTo(1));
+
+            Object.Destroy(entityObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator EarlyAwakeRegistrations_AreNotInsertedTwice()
+        {
+            GameObject entityObject = new("Early Feature Registration Entity");
+            entityObject.SetActive(false);
+            GameplayEntity entity = entityObject.AddComponent<GameplayEntity>();
+            PreEntityFeature feature = entityObject.AddComponent<PreEntityFeature>();
+
+            entityObject.SetActive(true);
+            yield return null;
+
+            Assert.That(entity.FeatureCount, Is.EqualTo(1));
+            Assert.That(feature.InitializeCount, Is.EqualTo(1));
+
+            Object.Destroy(entityObject);
+            yield return null;
+
+            GameObject hostObject = new("Early Service Registration Host");
+            hostObject.SetActive(false);
+            GameManagerHost host = hostObject.AddComponent<GameManagerHost>();
+            PreHostService service = hostObject.AddComponent<PreHostService>();
+
+            hostObject.SetActive(true);
+            yield return null;
+
+            Assert.That(host.ServiceCount, Is.EqualTo(1));
+            Assert.That(service.InitializeCount, Is.EqualTo(1));
+
+            Object.Destroy(hostObject);
+            yield return null;
+        }
+
+        [UnityTest]
         public IEnumerator TickScheduler_PreservesRegistrationMadeBeforeHostInitialization()
         {
             GameObject hostObject = new("Early Tick Registration Host");
@@ -244,7 +334,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             GameObject duplicateObject = new("Duplicate Default Host");
             duplicateObject.SetActive(false);
-            duplicateObject.AddComponent<GameManagerHost>();
+            GameManagerHost duplicate = duplicateObject.AddComponent<GameManagerHost>();
+            PreHostService duplicateService = duplicateObject.AddComponent<PreHostService>();
             LogAssert.Expect(
                 LogType.Error,
                 new System.Text.RegularExpressions.Regex(
@@ -254,8 +345,13 @@ namespace Rutin.GameFramework.Tests.PlayMode
             yield return null;
 
             Assert.That(GameManagerHost.Default, Is.SameAs(first));
-            Assert.That(duplicateObject == null, Is.True);
+            Assert.That(duplicateObject, Is.Not.Null);
+            Assert.That(duplicate.enabled, Is.False);
+            Assert.That(duplicateService.enabled, Is.False);
+            Assert.That(duplicateService.IsServiceInitialized, Is.False);
+            Assert.That(duplicate.ServiceCount, Is.Zero);
 
+            Object.Destroy(duplicateObject);
             Object.Destroy(firstObject);
             yield return null;
         }

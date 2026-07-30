@@ -12,11 +12,14 @@ namespace Rutin.GameFramework.Tests.EditMode
 
             public int TickCount { get; private set; }
 
+            public float LastDeltaTime { get; private set; }
+
             public Action OnTick { get; set; }
 
             public void Tick(float deltaTime)
             {
                 TickCount++;
+                LastDeltaTime = deltaTime;
                 OnTick?.Invoke();
             }
         }
@@ -145,6 +148,22 @@ namespace Rutin.GameFramework.Tests.EditMode
             scheduler.Tick(0.016f, 0d);
 
             Assert.That(added.TickCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Tick_BudgetDelayedItemReceivesAccumulatedDeltaTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ProbeTickable first = new();
+            ProbeTickable delayed = new();
+            scheduler.Register(first);
+            scheduler.Register(delayed);
+
+            scheduler.Tick(0.1f, 0d, 1);
+            scheduler.Tick(0.1f, 0d, 1);
+
+            Assert.That(first.LastDeltaTime, Is.EqualTo(0.1f).Within(0.0001f));
+            Assert.That(delayed.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
         }
     }
 }

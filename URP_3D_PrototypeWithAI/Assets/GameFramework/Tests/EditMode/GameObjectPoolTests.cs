@@ -73,6 +73,7 @@ namespace Rutin.GameFramework.Tests.EditMode
 
             Object.DestroyImmediate(instance.gameObject);
 
+            _pool.CompactDestroyedInstances();
             Assert.That(_pool.CountAll, Is.Zero);
             Assert.That(_pool.CountRented, Is.Zero);
             Assert.That(
@@ -89,6 +90,7 @@ namespace Rutin.GameFramework.Tests.EditMode
 
             Object.DestroyImmediate(instance.gameObject);
 
+            _pool.CompactDestroyedInstances();
             Assert.That(_pool.CountAll, Is.Zero);
             Assert.That(_pool.CountInactive, Is.Zero);
             Assert.That(

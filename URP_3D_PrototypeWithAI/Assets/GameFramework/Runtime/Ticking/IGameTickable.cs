@@ -4,6 +4,10 @@ namespace Rutin.GameFramework.Ticking
     {
         bool IsTickEnabled { get; }
 
+        /// <summary>
+        /// Receives the elapsed game time since this item was last visited by the scheduler.
+        /// Budget-delayed items therefore receive an accumulated delta rather than losing time.
+        /// </summary>
         void Tick(float deltaTime);
     }
 
