@@ -65,6 +65,11 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
   use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
   A remote timeout exits command-owned time and resumes live-timed neutral gravity simulation.
+  Set `remoteCommandTimeout` (or call `SetRemoteCommandTimeout`) to zero for deterministic streams
+  that must never fall back to wall-clock time; the default positive timeout remains safer for
+  network-owned players that should recover to neutral simulation after a disconnect. Remote
+  streams may change timing mode after a dispatch; mixing timed and live commands inside one
+  pending dispatch is rejected to avoid silently discarding either timing contract.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot

@@ -561,6 +561,35 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_LocalSourceReturnsToLiveTiming()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out ProbeCommandSource source,
+                out _,
+                out ProbeCommandConsumer consumer);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                sequence: 1,
+                simulationDeltaTimeSeconds: 0.05f);
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f));
+
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                sequence: 2);
+            scheduler.Tick(0.2f, 0d);
+
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.False);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
+        }
+
+        [Test]
         public void CommandFeature_AccumulatesRemoteCommandSimulationTime()
         {
             BudgetedTickScheduler scheduler = new();
@@ -629,6 +658,100 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
             Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.False);
             Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
+        }
+
+        [Test]
+        public void CommandFeature_ZeroRemoteTimeoutPreservesCommandOwnedTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            commands.SetRemoteCommandTimeout(0f);
+            commands.SubmitCommand(
+                new PlayerCommand(
+                    Vector2.up,
+                    Vector2.zero,
+                    false,
+                    sequence: 1,
+                    simulationDeltaTimeSeconds: 0.05f));
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f));
+
+            scheduler.Tick(1f, 0d);
+
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.True);
+            Assert.That(consumer.LastDeltaTime, Is.Zero);
+            Assert.That(commands.RemoteCommandTimeout, Is.Zero);
+        }
+
+        [Test]
+        public void CommandFeature_RemoteTimingModeChangesAtDispatchBoundary()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 1,
+                        simulationDeltaTimeSeconds: 0.05f)),
+                Is.True);
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f));
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 2)),
+                Is.True);
+            scheduler.Tick(0.2f, 0d);
+
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.False);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
+        }
+
+        [Test]
+        public void CommandFeature_RejectsMixedTimingModesWithinDispatch()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out _);
+            commands.SetLocallyControlled(false);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 1,
+                        simulationDeltaTimeSeconds: 0.05f)),
+                Is.True);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 2)),
+                Is.False);
         }
 
         [Test]

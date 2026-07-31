@@ -16,7 +16,7 @@ namespace Rutin.GameFramework.Player
         [SerializeField] private bool locallyControlled = true;
         [SerializeField] private bool simulationEnabled = true;
 
-        [Min(0.01f)]
+        [Min(0f)]
         [SerializeField] private float remoteCommandTimeout = 0.25f;
 
         private readonly List<MonoBehaviour> _sourceDiscoveryBuffer = new(4);
@@ -32,6 +32,7 @@ namespace Rutin.GameFramework.Player
         private uint _lastAcceptedSequence;
         private uint _currentSequence;
         private bool _usesCommandSimulationTime;
+        private bool _hasPendingCommandForDispatch;
         private float _pendingSimulationDeltaTimeSeconds;
         private float _remoteCommandAge;
         private uint _dispatchGeneration;
@@ -46,6 +47,8 @@ namespace Rutin.GameFramework.Player
         public bool IsLocallyControlled => locallyControlled;
 
         public bool IsSimulationEnabled => simulationEnabled;
+
+        public float RemoteCommandTimeout => remoteCommandTimeout;
 
         public PlayerCommand CurrentCommand =>
             new(
@@ -94,6 +97,15 @@ namespace Rutin.GameFramework.Player
         }
 
         /// <summary>
+        /// Sets the wall-clock timeout for remote input. Zero disables timeout fallback for
+        /// deterministic command-owned streams.
+        /// </summary>
+        public void SetRemoteCommandTimeout(float seconds)
+        {
+            remoteCommandTimeout = Mathf.Max(0f, seconds);
+        }
+
+        /// <summary>
         /// Supplies a replay, server-authoritative, or remote-owned command while this feature
         /// is not locally controlled. Non-zero sequence values must be newer than the last
         /// accepted sequence; zero opts out of ordering.
@@ -102,13 +114,30 @@ namespace Rutin.GameFramework.Player
         {
             if (!IsFeatureActive ||
                 !simulationEnabled ||
-                locallyControlled ||
-                !AcceptRemoteSequence(command.Sequence))
+                locallyControlled)
             {
                 return false;
             }
 
+            if (_hasPendingCommandForDispatch &&
+                command.HasSimulationDeltaTime != _usesCommandSimulationTime)
+            {
+                return false;
+            }
+
+            if (!AcceptRemoteSequence(command.Sequence))
+            {
+                return false;
+            }
+
+            if (!_hasPendingCommandForDispatch)
+            {
+                _usesCommandSimulationTime =
+                    command.HasSimulationDeltaTime;
+            }
+
             AcceptCommand(command);
+            _hasPendingCommandForDispatch = true;
             _hasRemoteCommand = true;
             _remoteCommandAge = 0f;
             return true;
@@ -159,6 +188,7 @@ namespace Rutin.GameFramework.Player
             {
                 if (_source != null && _source.IsInputAvailable)
                 {
+                    _usesCommandSimulationTime = false;
                     AcceptCommand(_source.ReadCommand(elapsed));
                 }
                 else
@@ -171,7 +201,8 @@ namespace Rutin.GameFramework.Player
                 if (_hasRemoteCommand)
                 {
                     _remoteCommandAge += elapsed;
-                    if (_remoteCommandAge >= Mathf.Max(0.01f, remoteCommandTimeout))
+                    if (remoteCommandTimeout > 0f &&
+                        _remoteCommandAge >= remoteCommandTimeout)
                     {
                         ClearPendingInput();
                         _usesCommandSimulationTime = false;
@@ -290,6 +321,7 @@ namespace Rutin.GameFramework.Player
                     : deltaTime;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
+            _hasPendingCommandForDispatch = false;
             _pendingSimulationDeltaTimeSeconds = 0f;
 
             uint generation = _dispatchGeneration;
@@ -396,6 +428,7 @@ namespace Rutin.GameFramework.Player
             _remoteCommandAge = 0f;
             _currentSequence = 0;
             _usesCommandSimulationTime = false;
+            _hasPendingCommandForDispatch = false;
             _pendingSimulationDeltaTimeSeconds = 0f;
             if (resetSequence)
             {
@@ -417,6 +450,7 @@ namespace Rutin.GameFramework.Player
             _moveState = Vector2.zero;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
+            _hasPendingCommandForDispatch = false;
             _pendingSimulationDeltaTimeSeconds = 0f;
         }
 
