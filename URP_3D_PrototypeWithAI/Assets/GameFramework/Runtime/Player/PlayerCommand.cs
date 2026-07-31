@@ -12,6 +12,8 @@ namespace Rutin.GameFramework.Player
     /// </summary>
     public readonly struct PlayerCommand
     {
+        public const float MaximumSimulationDeltaTimeSeconds = 5f;
+
         public PlayerCommand(
             Vector2 move,
             Vector2 look,
@@ -57,7 +59,7 @@ namespace Rutin.GameFramework.Player
             Sequence = sequence;
             HasSimulationDeltaTime = hasSimulationDeltaTime;
             SimulationDeltaTimeSeconds = hasSimulationDeltaTime
-                ? Mathf.Max(0f, simulationDeltaTimeSeconds)
+                ? SanitizeSimulationDeltaTime(simulationDeltaTimeSeconds)
                 : 0f;
         }
 
@@ -74,6 +76,24 @@ namespace Rutin.GameFramework.Player
         public float SimulationDeltaTimeSeconds { get; }
 
         public static PlayerCommand Neutral => default;
+
+        private static float SanitizeSimulationDeltaTime(float seconds)
+        {
+            if (float.IsNaN(seconds) || float.IsNegativeInfinity(seconds))
+            {
+                return 0f;
+            }
+
+            if (float.IsPositiveInfinity(seconds))
+            {
+                return MaximumSimulationDeltaTimeSeconds;
+            }
+
+            return Mathf.Clamp(
+                seconds,
+                0f,
+                MaximumSimulationDeltaTimeSeconds);
+        }
     }
 
     /// <summary>

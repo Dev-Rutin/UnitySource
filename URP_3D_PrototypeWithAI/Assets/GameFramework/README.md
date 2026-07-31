@@ -66,10 +66,15 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   every recorded movement transition must be consumed in a separate scheduler dispatch. Network
   serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
   use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
+  The payload sanitizes non-finite durations and clamps each command to
+  `PlayerCommand.MaximumSimulationDeltaTimeSeconds`; split longer replay intervals into ordered
+  commands instead of transporting one unbounded duration.
   A remote timeout exits command-owned time and resumes live-timed neutral gravity simulation.
   Set `remoteCommandTimeout` (or call `SetRemoteCommandTimeout`) to zero for deterministic streams
   that must never fall back to wall-clock time; the default positive timeout remains safer for
-  network-owned players that should recover to neutral simulation after a disconnect. Remote
+  network-owned players that should recover to neutral simulation after a disconnect. Timed
+  backlog preservation is guaranteed only while command-owned mode remains active, so streams
+  that must drain every recorded interval must disable the wall-clock timeout. Remote
   streams may change timing mode after a dispatch; mixing timed and live commands inside one
   pending dispatch returns `RetryAfterDispatch` from `SubmitCommandDetailed` to avoid silently
   discarding either timing contract. Producers must retry that same immutable command after the
@@ -83,7 +88,10 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   bounded fixed substeps and buffers jump input briefly so a landing later in the same batch does
   not lose the edge. Live wall-clock input discards excess accumulated time at the substep cap;
   command-owned replay time retains excess as backlog and drains it across later zero-duration
-  dispatches, keeping the final replay state independent of command batching.
+  dispatches, keeping the final replay state independent of command batching within the configured
+  `maximumCommandBacklogSeconds`. `PendingSimulationTimeSeconds` exposes current replay latency,
+  while excess beyond the finite backlog limit contributes to
+  `TotalDiscardedSimulationTimeSeconds`.
 - `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
   explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
   run before the motor so movement uses the current command's yaw without a one-tick delay.

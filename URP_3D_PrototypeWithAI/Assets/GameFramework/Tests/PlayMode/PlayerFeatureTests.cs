@@ -810,6 +810,38 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void PlayerCommand_SanitizesUntrustedSimulationDurations()
+        {
+            PlayerCommand notANumber = new(
+                Vector2.zero,
+                Vector2.zero,
+                false,
+                sequence: 1,
+                simulationDeltaTimeSeconds: float.NaN);
+            PlayerCommand positiveInfinity = new(
+                Vector2.zero,
+                Vector2.zero,
+                false,
+                sequence: 2,
+                simulationDeltaTimeSeconds: float.PositiveInfinity);
+            PlayerCommand oversized = new(
+                Vector2.zero,
+                Vector2.zero,
+                false,
+                sequence: 3,
+                simulationDeltaTimeSeconds:
+                    PlayerCommand.MaximumSimulationDeltaTimeSeconds * 2f);
+
+            Assert.That(notANumber.SimulationDeltaTimeSeconds, Is.Zero);
+            Assert.That(
+                positiveInfinity.SimulationDeltaTimeSeconds,
+                Is.EqualTo(PlayerCommand.MaximumSimulationDeltaTimeSeconds));
+            Assert.That(
+                oversized.SimulationDeltaTimeSeconds,
+                Is.EqualTo(PlayerCommand.MaximumSimulationDeltaTimeSeconds));
+        }
+
+        [Test]
         public void Motor_ReportsInternallyDiscardedSimulationTime()
         {
             BudgetedTickScheduler scheduler = new();
@@ -924,6 +956,43 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 splitBatchTransform.position.y,
                 Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+        }
+
+        [Test]
+        public void Motor_TimedBacklogIsFiniteAndObservable()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "Bounded Timed Backlog Player",
+                out _,
+                out _);
+            PlayerCharacterMotorFeature motor =
+                player.GetComponent<PlayerCharacterMotorFeature>();
+            PlayerCommand maximumDurationCommand = new(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                sequence: 1,
+                simulationDeltaTimeSeconds:
+                    PlayerCommand.MaximumSimulationDeltaTimeSeconds);
+
+            for (int i = 0; i < 20; i++)
+            {
+                motor.ProcessPlayerCommand(
+                    maximumDurationCommand,
+                    maximumDurationCommand.SimulationDeltaTimeSeconds);
+            }
+
+            Assert.That(
+                motor.PendingSimulationTimeSeconds,
+                Is.LessThanOrEqualTo(motor.MaximumCommandBacklogSeconds));
+            Assert.That(
+                motor.PendingSimulationTimeSeconds,
+                Is.GreaterThan(0d));
+            Assert.That(
+                motor.TotalDiscardedSimulationTimeSeconds,
+                Is.GreaterThan(0d));
         }
 
         [Test]

@@ -14,6 +14,9 @@ namespace Rutin.GameFramework.Player
         EntityFeature,
         IPlayerCommandConsumer
     {
+        private const float DefaultMaximumCommandBacklogSeconds = 60f;
+        private const float MaximumAllowedCommandBacklogSeconds = 600f;
+
         [Min(0f)]
         [SerializeField] private float moveSpeed = 5f;
 
@@ -40,6 +43,10 @@ namespace Rutin.GameFramework.Player
         [Range(1, 32)]
         [SerializeField] private int maximumSubsteps = 16;
 
+        [Range(1f, MaximumAllowedCommandBacklogSeconds)]
+        [SerializeField] private float maximumCommandBacklogSeconds =
+            DefaultMaximumCommandBacklogSeconds;
+
         private CharacterController _controller;
         private PlayerCommandFeature _commands;
         private Vector2 _desiredMove;
@@ -60,6 +67,26 @@ namespace Rutin.GameFramework.Player
 
         public double TotalDiscardedSimulationTimeSeconds =>
             _totalDiscardedSimulationTimeSeconds;
+
+        public double PendingSimulationTimeSeconds => _accumulatedTime;
+
+        public double MaximumCommandBacklogSeconds
+        {
+            get
+            {
+                if (float.IsNaN(maximumCommandBacklogSeconds) ||
+                    float.IsInfinity(maximumCommandBacklogSeconds))
+                {
+                    return DefaultMaximumCommandBacklogSeconds;
+                }
+
+                return Math.Max(
+                    1d,
+                    Math.Min(
+                        MaximumAllowedCommandBacklogSeconds,
+                        maximumCommandBacklogSeconds));
+            }
+        }
 
         public void SetMovementSpace(Transform value)
         {
@@ -108,12 +135,24 @@ namespace Rutin.GameFramework.Player
             double availableSimulationTime =
                 _accumulatedTime + Math.Max(0d, deltaTime);
             double maximumSimulationTime = step * substepLimit;
-            if (!command.HasSimulationDeltaTime &&
-                availableSimulationTime > maximumSimulationTime)
+            double accumulationLimit = command.HasSimulationDeltaTime
+                ? MaximumCommandBacklogSeconds
+                : maximumSimulationTime;
+            if (double.IsNaN(availableSimulationTime))
+            {
+                availableSimulationTime = 0d;
+            }
+            else if (double.IsPositiveInfinity(availableSimulationTime))
+            {
+                _totalDiscardedSimulationTimeSeconds =
+                    double.PositiveInfinity;
+                availableSimulationTime = accumulationLimit;
+            }
+            else if (availableSimulationTime > accumulationLimit)
             {
                 _totalDiscardedSimulationTimeSeconds +=
-                    availableSimulationTime - maximumSimulationTime;
-                availableSimulationTime = maximumSimulationTime;
+                    availableSimulationTime - accumulationLimit;
+                availableSimulationTime = accumulationLimit;
             }
 
             _accumulatedTime = availableSimulationTime;
