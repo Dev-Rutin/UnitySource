@@ -824,21 +824,16 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 false,
                 sequence: 2,
                 simulationDeltaTimeSeconds: float.PositiveInfinity);
-            PlayerCommand oversized = new(
+            PlayerCommand largeFinite = new(
                 Vector2.zero,
                 Vector2.zero,
                 false,
                 sequence: 3,
-                simulationDeltaTimeSeconds:
-                    PlayerCommand.MaximumSimulationDeltaTimeSeconds * 2f);
+                simulationDeltaTimeSeconds: 1000f);
 
             Assert.That(notANumber.SimulationDeltaTimeSeconds, Is.Zero);
-            Assert.That(
-                positiveInfinity.SimulationDeltaTimeSeconds,
-                Is.EqualTo(PlayerCommand.MaximumSimulationDeltaTimeSeconds));
-            Assert.That(
-                oversized.SimulationDeltaTimeSeconds,
-                Is.EqualTo(PlayerCommand.MaximumSimulationDeltaTimeSeconds));
+            Assert.That(positiveInfinity.SimulationDeltaTimeSeconds, Is.Zero);
+            Assert.That(largeFinite.SimulationDeltaTimeSeconds, Is.EqualTo(1000f));
         }
 
         [Test]
@@ -974,8 +969,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 Vector2.zero,
                 false,
                 sequence: 1,
-                simulationDeltaTimeSeconds:
-                    PlayerCommand.MaximumSimulationDeltaTimeSeconds);
+                simulationDeltaTimeSeconds: 5f);
 
             for (int i = 0; i < 20; i++)
             {
@@ -993,6 +987,99 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 motor.TotalDiscardedSimulationTimeSeconds,
                 Is.GreaterThan(0d));
+        }
+
+        [Test]
+        public void RemoteMotor_TimedReplayIsInvariantAcrossSubmissionPartitions()
+        {
+            BudgetedTickScheduler singleDispatchScheduler = new();
+            GameObject singleDispatchPlayer = CreateMotorPlayer(
+                singleDispatchScheduler,
+                "Remote Single Dispatch Player",
+                out _,
+                out Transform singleDispatchTransform);
+            PlayerCommandFeature singleDispatchCommands =
+                singleDispatchPlayer.GetComponent<PlayerCommandFeature>();
+            PlayerCharacterMotorFeature singleDispatchMotor =
+                singleDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+            singleDispatchCommands.SetLocallyControlled(false);
+            singleDispatchCommands.SetRemoteCommandTimeout(0f);
+
+            BudgetedTickScheduler splitDispatchScheduler = new();
+            GameObject splitDispatchPlayer = CreateMotorPlayer(
+                splitDispatchScheduler,
+                "Remote Split Dispatch Player",
+                out _,
+                out Transform splitDispatchTransform);
+            splitDispatchTransform.position = Vector3.right * 10f;
+            PlayerCommandFeature splitDispatchCommands =
+                splitDispatchPlayer.GetComponent<PlayerCommandFeature>();
+            PlayerCharacterMotorFeature splitDispatchMotor =
+                splitDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+            splitDispatchCommands.SetLocallyControlled(false);
+            splitDispatchCommands.SetRemoteCommandTimeout(0f);
+
+            Assert.That(
+                singleDispatchCommands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 1,
+                        simulationDeltaTimeSeconds: 3f)),
+                Is.True);
+            Assert.That(
+                singleDispatchCommands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 2,
+                        simulationDeltaTimeSeconds: 3f)),
+                Is.True);
+            singleDispatchScheduler.Tick(0f, 0d);
+            for (int i = 0; i < 22; i++)
+            {
+                singleDispatchScheduler.Tick(0f, 0d);
+            }
+
+            Assert.That(
+                splitDispatchCommands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 1,
+                        simulationDeltaTimeSeconds: 3f)),
+                Is.True);
+            splitDispatchScheduler.Tick(0f, 0d);
+            Assert.That(
+                splitDispatchCommands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence: 2,
+                        simulationDeltaTimeSeconds: 3f)),
+                Is.True);
+            splitDispatchScheduler.Tick(0f, 0d);
+            for (int i = 0; i < 21; i++)
+            {
+                splitDispatchScheduler.Tick(0f, 0d);
+            }
+
+            Assert.That(
+                singleDispatchMotor.TotalDiscardedSimulationTimeSeconds,
+                Is.Zero.Within(0.000001d));
+            Assert.That(
+                splitDispatchMotor.TotalDiscardedSimulationTimeSeconds,
+                Is.Zero.Within(0.000001d));
+            Assert.That(
+                splitDispatchTransform.position.z,
+                Is.EqualTo(singleDispatchTransform.position.z).Within(0.0001f));
+            Assert.That(
+                splitDispatchTransform.position.y,
+                Is.EqualTo(singleDispatchTransform.position.y).Within(0.0001f));
         }
 
         [Test]

@@ -66,9 +66,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   every recorded movement transition must be consumed in a separate scheduler dispatch. Network
   serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
   use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
-  The payload sanitizes non-finite durations and clamps each command to
-  `PlayerCommand.MaximumSimulationDeltaTimeSeconds`; split longer replay intervals into ordered
-  commands instead of transporting one unbounded duration.
+  The payload normalizes non-finite or negative durations to zero. Finite duration budgets are
+  enforced once by the motor's observable command-backlog limit, after durations submitted within
+  one dispatch have been accumulated without a smaller intermediate clamp.
   A remote timeout exits command-owned time and resumes live-timed neutral gravity simulation.
   Set `remoteCommandTimeout` (or call `SetRemoteCommandTimeout`) to zero for deterministic streams
   that must never fall back to wall-clock time; the default positive timeout remains safer for

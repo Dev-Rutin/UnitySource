@@ -325,8 +325,13 @@ namespace Rutin.GameFramework.Player
             if (command.HasSimulationDeltaTime)
             {
                 _usesCommandSimulationTime = true;
-                _pendingSimulationDeltaTimeSeconds +=
+                double accumulatedSimulationTime =
+                    (double)_pendingSimulationDeltaTimeSeconds +
                     command.SimulationDeltaTimeSeconds;
+                _pendingSimulationDeltaTimeSeconds =
+                    accumulatedSimulationTime >= float.MaxValue
+                        ? float.MaxValue
+                        : (float)accumulatedSimulationTime;
             }
         }
 
