@@ -108,7 +108,8 @@ namespace Rutin.GameFramework.Player
             double availableSimulationTime =
                 _accumulatedTime + Math.Max(0d, deltaTime);
             double maximumSimulationTime = step * substepLimit;
-            if (availableSimulationTime > maximumSimulationTime)
+            if (!command.HasSimulationDeltaTime &&
+                availableSimulationTime > maximumSimulationTime)
             {
                 _totalDiscardedSimulationTimeSeconds +=
                     availableSimulationTime - maximumSimulationTime;

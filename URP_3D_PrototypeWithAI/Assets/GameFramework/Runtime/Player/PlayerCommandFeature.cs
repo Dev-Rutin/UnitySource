@@ -6,6 +6,15 @@ using UnityEngine;
 
 namespace Rutin.GameFramework.Player
 {
+    public enum PlayerCommandSubmissionResult
+    {
+        Accepted,
+        RejectedInactive,
+        RejectedOwnership,
+        RejectedStaleSequence,
+        RetryAfterDispatch
+    }
+
     /// <summary>
     /// Ownership-aware command producer and dispatcher. This is the only scheduled component
     /// in a player stack; motor, view, and custom consumers are invoked in deterministic order.
@@ -112,22 +121,37 @@ namespace Rutin.GameFramework.Player
         /// </summary>
         public bool SubmitCommand(PlayerCommand command)
         {
+            return SubmitCommandDetailed(command) ==
+                PlayerCommandSubmissionResult.Accepted;
+        }
+
+        /// <summary>
+        /// Supplies a remote command and reports whether rejection is permanent or the producer
+        /// should retry after the current pending timing mode has been dispatched.
+        /// </summary>
+        public PlayerCommandSubmissionResult SubmitCommandDetailed(
+            PlayerCommand command)
+        {
             if (!IsFeatureActive ||
-                !simulationEnabled ||
-                locallyControlled)
+                !simulationEnabled)
             {
-                return false;
+                return PlayerCommandSubmissionResult.RejectedInactive;
+            }
+
+            if (locallyControlled)
+            {
+                return PlayerCommandSubmissionResult.RejectedOwnership;
             }
 
             if (_hasPendingCommandForDispatch &&
                 command.HasSimulationDeltaTime != _usesCommandSimulationTime)
             {
-                return false;
+                return PlayerCommandSubmissionResult.RetryAfterDispatch;
             }
 
             if (!AcceptRemoteSequence(command.Sequence))
             {
-                return false;
+                return PlayerCommandSubmissionResult.RejectedStaleSequence;
             }
 
             if (!_hasPendingCommandForDispatch)
@@ -140,7 +164,7 @@ namespace Rutin.GameFramework.Player
             _hasPendingCommandForDispatch = true;
             _hasRemoteCommand = true;
             _remoteCommandAge = 0f;
-            return true;
+            return PlayerCommandSubmissionResult.Accepted;
         }
 
         public bool RegisterConsumer(IPlayerCommandConsumer consumer)

@@ -37,7 +37,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - Add `CharacterController`, `GameplayEntity`, `PlayerCommandFeature`, and
   `PlayerCharacterMotorFeature` to the player object.
 - Add `PlayerLookFeature` when the entity owns yaw/pitch transforms. Look commands are angular
-  deltas in degrees and are latched until consumed; jump presses are also latched.
+  deltas in degrees and are latched until consumed; jump presses are also latched. Look is a
+  dispatch-domain, unscaled view update and can continue while simulation time is paused. Disable
+  the command/view feature or its source when a game pause must also freeze the camera.
 - For local control, add `InputSystemPlayerCommandSource` from the separate
   `Rutin.GameFramework.InputSystem` assembly and assign move, look, and jump actions.
   `PlayerCommandFeature` discovers the source once during initialization. Enable
@@ -69,14 +71,19 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   that must never fall back to wall-clock time; the default positive timeout remains safer for
   network-owned players that should recover to neutral simulation after a disconnect. Remote
   streams may change timing mode after a dispatch; mixing timed and live commands inside one
-  pending dispatch is rejected to avoid silently discarding either timing contract.
+  pending dispatch returns `RetryAfterDispatch` from `SubmitCommandDetailed` to avoid silently
+  discarding either timing contract. Producers must retry that same immutable command after the
+  next dispatch so its look and jump edges are preserved. The legacy `SubmitCommand` boolean
+  wrapper returns `false` for every rejection category.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
   to sorted motor/view consumers, making each player stack atomic even when the global scheduler
   is budget-limited or swap-removes other entities. The motor integrates accumulated time using
   bounded fixed substeps and buffers jump input briefly so a landing later in the same batch does
-  not lose the edge.
+  not lose the edge. Live wall-clock input discards excess accumulated time at the substep cap;
+  command-owned replay time retains excess as backlog and drains it across later zero-duration
+  dispatches, keeping the final replay state independent of command batching.
 - `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
   explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
   run before the motor so movement uses the current command's yaw without a one-tick delay.

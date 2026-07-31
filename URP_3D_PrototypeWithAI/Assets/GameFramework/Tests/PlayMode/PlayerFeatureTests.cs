@@ -725,33 +725,49 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void CommandFeature_RejectsMixedTimingModesWithinDispatch()
+        public void CommandFeature_MixedTimingModeCanRetryWithoutLosingEdges()
         {
             BudgetedTickScheduler scheduler = new();
             CreateCommandPlayer(
                 scheduler,
                 out _,
                 out PlayerCommandFeature commands,
-                out _);
+                out ProbeCommandConsumer consumer);
             commands.SetLocallyControlled(false);
 
             Assert.That(
-                commands.SubmitCommand(
+                commands.SubmitCommandDetailed(
                     new PlayerCommand(
                         Vector2.up,
                         Vector2.zero,
                         false,
                         sequence: 1,
                         simulationDeltaTimeSeconds: 0.05f)),
-                Is.True);
+                Is.EqualTo(PlayerCommandSubmissionResult.Accepted));
+            PlayerCommand liveCommand = new(
+                Vector2.right,
+                new Vector2(3f, -2f),
+                true,
+                sequence: 2);
             Assert.That(
-                commands.SubmitCommand(
-                    new PlayerCommand(
-                        Vector2.up,
-                        Vector2.zero,
-                        false,
-                        sequence: 2)),
-                Is.False);
+                commands.SubmitCommandDetailed(liveCommand),
+                Is.EqualTo(PlayerCommandSubmissionResult.RetryAfterDispatch));
+
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(1));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.False);
+
+            Assert.That(
+                commands.SubmitCommandDetailed(liveCommand),
+                Is.EqualTo(PlayerCommandSubmissionResult.Accepted));
+            scheduler.Tick(0.2f, 0d);
+
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(2));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(new Vector2(3f, -2f)));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.True);
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.False);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
         }
 
         [Test]
@@ -838,6 +854,70 @@ namespace Rutin.GameFramework.Tests.PlayMode
             splitBatchScheduler.Tick(0.05f, 0d);
             splitBatchScheduler.Tick(0.05f, 0d);
 
+            Assert.That(
+                splitBatchTransform.position.z,
+                Is.EqualTo(singleBatchTransform.position.z).Within(0.0001f));
+            Assert.That(
+                splitBatchTransform.position.y,
+                Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+        }
+
+        [Test]
+        public void Motor_TimedBacklogProducesSameResultAcrossCommandPartitions()
+        {
+            BudgetedTickScheduler singleBatchScheduler = new();
+            GameObject singleBatchPlayer = CreateMotorPlayer(
+                singleBatchScheduler,
+                "Timed Single Batch Player",
+                out _,
+                out Transform singleBatchTransform);
+            PlayerCharacterMotorFeature singleBatchMotor =
+                singleBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+
+            BudgetedTickScheduler splitBatchScheduler = new();
+            GameObject splitBatchPlayer = CreateMotorPlayer(
+                splitBatchScheduler,
+                "Timed Split Batch Player",
+                out _,
+                out Transform splitBatchTransform);
+            splitBatchTransform.position = Vector3.right * 10f;
+            PlayerCharacterMotorFeature splitBatchMotor =
+                splitBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+
+            PlayerCommand singleBatchCommand = new(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                sequence: 1,
+                simulationDeltaTimeSeconds: 0.4f);
+            singleBatchMotor.ProcessPlayerCommand(singleBatchCommand, 0.4f);
+            singleBatchMotor.ProcessPlayerCommand(
+                new PlayerCommand(
+                    Vector2.up,
+                    Vector2.zero,
+                    false,
+                    sequence: 2,
+                    simulationDeltaTimeSeconds: 0f),
+                0f);
+
+            for (uint sequence = 1; sequence <= 2; sequence++)
+            {
+                splitBatchMotor.ProcessPlayerCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        Vector2.zero,
+                        false,
+                        sequence,
+                        simulationDeltaTimeSeconds: 0.2f),
+                    0.2f);
+            }
+
+            Assert.That(
+                singleBatchMotor.TotalDiscardedSimulationTimeSeconds,
+                Is.Zero.Within(0.000001d));
+            Assert.That(
+                splitBatchMotor.TotalDiscardedSimulationTimeSeconds,
+                Is.Zero.Within(0.000001d));
             Assert.That(
                 splitBatchTransform.position.z,
                 Is.EqualTo(singleBatchTransform.position.z).Within(0.0001f));

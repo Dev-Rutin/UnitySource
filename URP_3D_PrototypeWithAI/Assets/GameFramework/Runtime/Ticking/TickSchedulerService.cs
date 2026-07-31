@@ -60,11 +60,12 @@ namespace Rutin.GameFramework.Ticking
 
         protected override void OnServiceShutdown()
         {
-            _scheduler?.Clear();
+            BudgetedTickScheduler scheduler = _scheduler;
             _scheduler = null;
             _hasShutDown = true;
             _consecutiveSaturatedFrames = 0;
             LastFrameStats = default;
+            scheduler?.Clear();
         }
 
         private void Update()
