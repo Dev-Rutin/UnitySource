@@ -4,7 +4,9 @@ namespace Rutin.GameFramework.Player
 {
     /// <summary>
     /// Immutable command payload suitable for local input, replay, or network transport.
-    /// Look is an angular delta in degrees for this command.
+    /// Look is an angular delta in degrees for this command. A positive
+    /// SimulationDeltaTimeSeconds makes replay simulation independent of scheduler timing;
+    /// zero uses the dispatch tick delta for live input.
     /// </summary>
     public readonly struct PlayerCommand
     {
@@ -12,12 +14,15 @@ namespace Rutin.GameFramework.Player
             Vector2 move,
             Vector2 look,
             bool jumpPressed,
-            uint sequence = 0)
+            uint sequence = 0,
+            float simulationDeltaTimeSeconds = 0f)
         {
             Move = Vector2.ClampMagnitude(move, 1f);
             Look = look;
             JumpPressed = jumpPressed;
             Sequence = sequence;
+            SimulationDeltaTimeSeconds =
+                Mathf.Max(0f, simulationDeltaTimeSeconds);
         }
 
         public Vector2 Move { get; }
@@ -27,6 +32,8 @@ namespace Rutin.GameFramework.Player
         public bool JumpPressed { get; }
 
         public uint Sequence { get; }
+
+        public float SimulationDeltaTimeSeconds { get; }
 
         public static PlayerCommand Neutral => default;
     }

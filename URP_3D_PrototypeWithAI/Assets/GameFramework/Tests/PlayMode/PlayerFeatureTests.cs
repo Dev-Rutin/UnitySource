@@ -42,6 +42,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             public PlayerCommand LastCommand { get; private set; }
 
+            public float LastDeltaTime { get; private set; }
+
             public Action ProcessAction { get; set; }
 
             public void ProcessPlayerCommand(
@@ -50,6 +52,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             {
                 CallCount++;
                 LastCommand = command;
+                LastDeltaTime = deltaTime;
                 OrderLog?.Add(Marker);
                 ProcessAction?.Invoke();
             }
@@ -530,6 +533,50 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(scheduler.Count, Is.Zero);
             player.SetActive(true);
             Assert.That(scheduler.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void CommandFeature_UsesCommandSimulationDeltaForReplay()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out ProbeCommandSource source,
+                out _,
+                out ProbeCommandConsumer consumer);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                sequence: 42,
+                simulationDeltaTimeSeconds: 0.05f);
+
+            scheduler.Tick(0.2f, 0d);
+
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(42));
+            Assert.That(
+                consumer.LastCommand.SimulationDeltaTimeSeconds,
+                Is.EqualTo(0.05f));
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f));
+        }
+
+        [Test]
+        public void Motor_ReportsInternallyDiscardedSimulationTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "Clamped Motor Player",
+                out _,
+                out _);
+            PlayerCharacterMotorFeature motor =
+                player.GetComponent<PlayerCharacterMotorFeature>();
+
+            motor.ProcessPlayerCommand(PlayerCommand.Neutral, 1f);
+
+            Assert.That(
+                motor.TotalDiscardedSimulationTimeSeconds,
+                Is.GreaterThan(0.7d));
         }
 
         [Test]

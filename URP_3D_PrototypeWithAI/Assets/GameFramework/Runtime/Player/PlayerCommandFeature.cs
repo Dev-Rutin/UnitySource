@@ -31,6 +31,7 @@ namespace Rutin.GameFramework.Player
         private bool _hasAcceptedSequence;
         private uint _lastAcceptedSequence;
         private uint _currentSequence;
+        private float _pendingSimulationDeltaTimeSeconds;
         private float _remoteCommandAge;
         private uint _dispatchGeneration;
         private bool _isResettingConsumers;
@@ -46,7 +47,12 @@ namespace Rutin.GameFramework.Player
         public bool IsSimulationEnabled => simulationEnabled;
 
         public PlayerCommand CurrentCommand =>
-            new(_moveState, _pendingLook, _pendingJump, _currentSequence);
+            new(
+                _moveState,
+                _pendingLook,
+                _pendingJump,
+                _currentSequence,
+                _pendingSimulationDeltaTimeSeconds);
 
         public void SetCommandSource(IPlayerCommandSource source)
         {
@@ -258,6 +264,8 @@ namespace Rutin.GameFramework.Player
             _pendingLook += command.Look;
             _pendingJump |= command.JumpPressed;
             _currentSequence = command.Sequence;
+            _pendingSimulationDeltaTimeSeconds =
+                command.SimulationDeltaTimeSeconds;
         }
 
         private void DispatchCommand(float deltaTime)
@@ -266,9 +274,15 @@ namespace Rutin.GameFramework.Player
                 _moveState,
                 _pendingLook,
                 _pendingJump,
-                _currentSequence);
+                _currentSequence,
+                _pendingSimulationDeltaTimeSeconds);
+            float simulationDeltaTime =
+                command.SimulationDeltaTimeSeconds > 0f
+                    ? command.SimulationDeltaTimeSeconds
+                    : deltaTime;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
+            _pendingSimulationDeltaTimeSeconds = 0f;
 
             uint generation = _dispatchGeneration;
             _dispatchSnapshot.Clear();
@@ -301,7 +315,9 @@ namespace Rutin.GameFramework.Player
 
                     try
                     {
-                        consumer.ProcessPlayerCommand(command, deltaTime);
+                        consumer.ProcessPlayerCommand(
+                            command,
+                            simulationDeltaTime);
                     }
                     catch (Exception exception)
                     {
@@ -371,6 +387,7 @@ namespace Rutin.GameFramework.Player
             _hasRemoteCommand = false;
             _remoteCommandAge = 0f;
             _currentSequence = 0;
+            _pendingSimulationDeltaTimeSeconds = 0f;
             if (resetSequence)
             {
                 _hasAcceptedSequence = false;
@@ -391,6 +408,7 @@ namespace Rutin.GameFramework.Player
             _moveState = Vector2.zero;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
+            _pendingSimulationDeltaTimeSeconds = 0f;
         }
 
         private int IndexOfConsumer(IPlayerCommandConsumer consumer)

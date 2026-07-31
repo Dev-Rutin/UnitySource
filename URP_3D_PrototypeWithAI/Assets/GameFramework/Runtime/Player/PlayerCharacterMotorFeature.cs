@@ -46,6 +46,7 @@ namespace Rutin.GameFramework.Player
         private Vector3 _horizontalVelocity;
         private float _verticalVelocity;
         private double _accumulatedTime;
+        private double _totalDiscardedSimulationTimeSeconds;
         private float _jumpBufferRemaining;
         private bool _usesLookMovementSpace;
 
@@ -56,6 +57,9 @@ namespace Rutin.GameFramework.Player
 
         public Transform MovementSpace =>
             movementSpace != null ? movementSpace : transform;
+
+        public double TotalDiscardedSimulationTimeSeconds =>
+            _totalDiscardedSimulationTimeSeconds;
 
         public void SetMovementSpace(Transform value)
         {
@@ -101,9 +105,17 @@ namespace Rutin.GameFramework.Player
 
             double step = Math.Max(0.001d, fixedStepSeconds);
             int substepLimit = Mathf.Clamp(maximumSubsteps, 1, 32);
-            _accumulatedTime = Math.Min(
-                _accumulatedTime + Math.Max(0d, deltaTime),
-                step * substepLimit);
+            double availableSimulationTime =
+                _accumulatedTime + Math.Max(0d, deltaTime);
+            double maximumSimulationTime = step * substepLimit;
+            if (availableSimulationTime > maximumSimulationTime)
+            {
+                _totalDiscardedSimulationTimeSeconds +=
+                    availableSimulationTime - maximumSimulationTime;
+                availableSimulationTime = maximumSimulationTime;
+            }
+
+            _accumulatedTime = availableSimulationTime;
 
             const double StepBoundaryTolerance = 0.000001d;
             int processedSteps = Math.Min(

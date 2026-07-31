@@ -14,7 +14,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   and exposes the session total through `TotalQuarantinedCount`.
 - Time budgets are checked between tickables, so size them for the worst-case bounded work of one
   player stack. `LastFrameStats.ClampedTickCount` / `DiscardedDeltaTimeSeconds` and
-  `TotalDiscardedDeltaTimeSeconds` expose simulation time discarded by the accumulated-delta cap.
+  `TotalDiscardedDeltaTimeSeconds` expose simulation time discarded by the scheduler cap.
+  `PlayerCharacterMotorFeature.TotalDiscardedSimulationTimeSeconds` separately exposes time
+  discarded by its fixed-substep cap, including configurations where the motor cap is lower.
 - Scheduled features use an allocation-conscious dense observer registry to invalidate cached
   default services and bind to a replacement scheduler, including while the feature is inactive.
 - Scheduler clear removes registrations before observer callbacks, so recovery callbacks can
@@ -52,6 +54,10 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   configured command timeout while gravity and other neutral simulation continue. Commands
   submitted while the feature is inactive or locally controlled are rejected instead of
   accumulating stale edges or mixing remote input into the local command stream.
+- Replay/server commands can set `SimulationDeltaTimeSeconds` to make consumer simulation use
+  command-owned time instead of the scheduler visit delta. Deterministic replay producers must
+  submit one recorded command per dispatch in sequence and preserve the fixed-step settings,
+  initial state, and collision world. A zero duration intentionally retains live-input behavior.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
