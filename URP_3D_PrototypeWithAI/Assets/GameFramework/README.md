@@ -61,7 +61,10 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   zero simulation time instead of mixing in the scheduler visit delta. Commands constructed
   without the duration retain live-input timing. Preserve fixed-step settings, initial state,
   collision world, and command order for deterministic replay. Use an `IPlayerCommandSource` when
-  every recorded movement transition must be consumed in a separate scheduler dispatch.
+  every recorded movement transition must be consumed in a separate scheduler dispatch. Network
+  serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
+  use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
+  A remote timeout exits command-owned time and resumes live-timed neutral gravity simulation.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot

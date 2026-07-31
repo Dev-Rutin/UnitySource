@@ -53,9 +53,8 @@ namespace Rutin.GameFramework.Player
                 _pendingLook,
                 _pendingJump,
                 _currentSequence,
-                _usesCommandSimulationTime
-                    ? _pendingSimulationDeltaTimeSeconds
-                    : -1f);
+                _pendingSimulationDeltaTimeSeconds,
+                _usesCommandSimulationTime);
 
         public void SetCommandSource(IPlayerCommandSource source)
         {
@@ -175,6 +174,7 @@ namespace Rutin.GameFramework.Player
                     if (_remoteCommandAge >= Mathf.Max(0.01f, remoteCommandTimeout))
                     {
                         ClearPendingInput();
+                        _usesCommandSimulationTime = false;
                         _hasRemoteCommand = false;
                     }
                 }
@@ -282,9 +282,8 @@ namespace Rutin.GameFramework.Player
                 _pendingLook,
                 _pendingJump,
                 _currentSequence,
-                _usesCommandSimulationTime
-                    ? _pendingSimulationDeltaTimeSeconds
-                    : -1f);
+                _pendingSimulationDeltaTimeSeconds,
+                _usesCommandSimulationTime);
             float simulationDeltaTime =
                 command.HasSimulationDeltaTime
                     ? command.SimulationDeltaTimeSeconds

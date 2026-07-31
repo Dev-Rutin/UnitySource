@@ -6,8 +6,9 @@ namespace Rutin.GameFramework.Player
     /// Immutable command payload suitable for local input, replay, or network transport.
     /// Look is an angular delta in degrees for this command. A positive
     /// SimulationDeltaTimeSeconds makes replay simulation independent of scheduler timing.
-    /// Commands constructed without that argument use the dispatch tick delta for live input;
-    /// an explicitly supplied zero-duration command advances no simulation time.
+    /// Commands constructed without a duration use the dispatch tick delta for live input;
+    /// an explicitly supplied zero-duration command advances no simulation time. Network
+    /// serializers must transport both HasSimulationDeltaTime and SimulationDeltaTimeSeconds.
     /// </summary>
     public readonly struct PlayerCommand
     {
@@ -15,16 +16,49 @@ namespace Rutin.GameFramework.Player
             Vector2 move,
             Vector2 look,
             bool jumpPressed,
-            uint sequence = 0,
-            float simulationDeltaTimeSeconds = -1f)
+            uint sequence = 0)
+            : this(
+                move,
+                look,
+                jumpPressed,
+                sequence,
+                0f,
+                false)
+        {
+        }
+
+        public PlayerCommand(
+            Vector2 move,
+            Vector2 look,
+            bool jumpPressed,
+            uint sequence,
+            float simulationDeltaTimeSeconds)
+            : this(
+                move,
+                look,
+                jumpPressed,
+                sequence,
+                simulationDeltaTimeSeconds,
+                true)
+        {
+        }
+
+        public PlayerCommand(
+            Vector2 move,
+            Vector2 look,
+            bool jumpPressed,
+            uint sequence,
+            float simulationDeltaTimeSeconds,
+            bool hasSimulationDeltaTime)
         {
             Move = Vector2.ClampMagnitude(move, 1f);
             Look = look;
             JumpPressed = jumpPressed;
             Sequence = sequence;
-            HasSimulationDeltaTime = simulationDeltaTimeSeconds >= 0f;
-            SimulationDeltaTimeSeconds =
-                Mathf.Max(0f, simulationDeltaTimeSeconds);
+            HasSimulationDeltaTime = hasSimulationDeltaTime;
+            SimulationDeltaTimeSeconds = hasSimulationDeltaTime
+                ? Mathf.Max(0f, simulationDeltaTimeSeconds)
+                : 0f;
         }
 
         public Vector2 Move { get; }

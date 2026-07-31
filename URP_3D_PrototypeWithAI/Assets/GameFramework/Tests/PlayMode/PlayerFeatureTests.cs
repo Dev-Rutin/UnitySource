@@ -604,6 +604,73 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_TimedRemoteTimeoutResumesNeutralSimulation()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            commands.SubmitCommand(
+                new PlayerCommand(
+                    Vector2.up,
+                    Vector2.zero,
+                    false,
+                    sequence: 1,
+                    simulationDeltaTimeSeconds: 0.05f));
+
+            scheduler.Tick(0.1f, 0d);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f));
+
+            scheduler.Tick(0.2f, 0d);
+
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.False);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.2f).Within(0.0001f));
+        }
+
+        [Test]
+        public void PlayerCommand_TransportRoundTripPreservesTimingMode()
+        {
+            PlayerCommand live = new(
+                Vector2.up,
+                Vector2.one,
+                true,
+                sequence: 7);
+            PlayerCommand restored = new(
+                live.Move,
+                live.Look,
+                live.JumpPressed,
+                live.Sequence,
+                live.SimulationDeltaTimeSeconds,
+                live.HasSimulationDeltaTime);
+
+            Assert.That(restored.HasSimulationDeltaTime, Is.False);
+            Assert.That(restored.SimulationDeltaTimeSeconds, Is.Zero);
+
+            PlayerCommand timed = new(
+                Vector2.down,
+                Vector2.zero,
+                false,
+                sequence: 8,
+                simulationDeltaTimeSeconds: 0.125f);
+            PlayerCommand restoredTimed = new(
+                timed.Move,
+                timed.Look,
+                timed.JumpPressed,
+                timed.Sequence,
+                timed.SimulationDeltaTimeSeconds,
+                timed.HasSimulationDeltaTime);
+
+            Assert.That(restoredTimed.HasSimulationDeltaTime, Is.True);
+            Assert.That(
+                restoredTimed.SimulationDeltaTimeSeconds,
+                Is.EqualTo(0.125f));
+        }
+
+        [Test]
         public void Motor_ReportsInternallyDiscardedSimulationTime()
         {
             BudgetedTickScheduler scheduler = new();
