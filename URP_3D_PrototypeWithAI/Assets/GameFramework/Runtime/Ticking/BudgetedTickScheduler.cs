@@ -23,6 +23,7 @@ namespace Rutin.GameFramework.Ticking
                 quarantinedCount,
                 0,
                 0d,
+                0d,
                 roundCompleted,
                 elapsedMilliseconds)
         {
@@ -37,6 +38,29 @@ namespace Rutin.GameFramework.Ticking
             double discardedDeltaTimeSeconds,
             bool roundCompleted,
             double elapsedMilliseconds)
+            : this(
+                registeredCount,
+                visitedCount,
+                processedCount,
+                quarantinedCount,
+                clampedTickCount,
+                discardedDeltaTimeSeconds,
+                discardedDeltaTimeSeconds,
+                roundCompleted,
+                elapsedMilliseconds)
+        {
+        }
+
+        public TickBatchStats(
+            int registeredCount,
+            int visitedCount,
+            int processedCount,
+            int quarantinedCount,
+            int clampedTickCount,
+            double discardedDeltaTimeSeconds,
+            double maximumDiscardedDeltaTimeSeconds,
+            bool roundCompleted,
+            double elapsedMilliseconds)
         {
             RegisteredCount = registeredCount;
             VisitedCount = visitedCount;
@@ -44,6 +68,8 @@ namespace Rutin.GameFramework.Ticking
             QuarantinedCount = quarantinedCount;
             ClampedTickCount = clampedTickCount;
             DiscardedDeltaTimeSeconds = discardedDeltaTimeSeconds;
+            MaximumDiscardedDeltaTimeSeconds =
+                maximumDiscardedDeltaTimeSeconds;
             RoundCompleted = roundCompleted;
             ElapsedMilliseconds = elapsedMilliseconds;
         }
@@ -58,7 +84,16 @@ namespace Rutin.GameFramework.Ticking
 
         public int ClampedTickCount { get; }
 
+        /// <summary>
+        /// Aggregate simulation seconds discarded across all clamped tickables in this batch.
+        /// This is workload time and can exceed wall-clock time.
+        /// </summary>
         public double DiscardedDeltaTimeSeconds { get; }
+
+        /// <summary>
+        /// Largest simulation-time discard reported by one tickable in this batch.
+        /// </summary>
+        public double MaximumDiscardedDeltaTimeSeconds { get; }
 
         public bool RoundCompleted { get; }
 
@@ -227,6 +262,7 @@ namespace Rutin.GameFramework.Ticking
             int quarantined = 0;
             int clampedTickCount = 0;
             double discardedDeltaTimeSeconds = 0d;
+            double maximumDiscardedDeltaTimeSeconds = 0d;
             bool roundCompleted = false;
             bool hasTimeBudget = timeBudgetMilliseconds > 0d;
             BeginRound(registeredCount);
@@ -309,6 +345,9 @@ namespace Rutin.GameFramework.Ticking
                     {
                         clampedTickCount++;
                         discardedDeltaTimeSeconds += discardedDeltaTime;
+                        maximumDiscardedDeltaTimeSeconds = Math.Max(
+                            maximumDiscardedDeltaTimeSeconds,
+                            discardedDeltaTime);
                     }
 
                     try
@@ -349,6 +388,7 @@ namespace Rutin.GameFramework.Ticking
                 quarantined,
                 clampedTickCount,
                 discardedDeltaTimeSeconds,
+                maximumDiscardedDeltaTimeSeconds,
                 roundCompleted,
                 GetElapsedMilliseconds(startTimestamp));
         }

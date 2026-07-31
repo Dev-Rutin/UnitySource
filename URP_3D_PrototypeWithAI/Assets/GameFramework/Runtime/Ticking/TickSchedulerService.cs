@@ -39,6 +39,10 @@ namespace Rutin.GameFramework.Ticking
 
         public long TotalQuarantinedCount { get; private set; }
 
+        /// <summary>
+        /// Session aggregate of per-tickable discarded simulation time.
+        /// This workload metric can exceed wall-clock session duration.
+        /// </summary>
         public double TotalDiscardedDeltaTimeSeconds { get; private set; }
 
         protected override void RegisterServiceContracts()
@@ -131,8 +135,10 @@ namespace Rutin.GameFramework.Ticking
                     $"{nameof(TickSchedulerService)} has exceeded its processing budget for " +
                     $"{_consecutiveSaturatedFrames} consecutive frames. Registered=" +
                     $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}, " +
-                    $"clamped={LastFrameStats.ClampedTickCount}, discardedSeconds=" +
-                    $"{TotalDiscardedDeltaTimeSeconds:F3}.",
+                    $"clamped={LastFrameStats.ClampedTickCount}, " +
+                    $"discardedTickSecondsTotal={TotalDiscardedDeltaTimeSeconds:F3}, " +
+                    $"maxDiscardedTickSecondsThisFrame=" +
+                    $"{LastFrameStats.MaximumDiscardedDeltaTimeSeconds:F3}.",
                     this);
             }
         }

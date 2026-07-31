@@ -31,6 +31,7 @@ namespace Rutin.GameFramework.Player
         private bool _hasAcceptedSequence;
         private uint _lastAcceptedSequence;
         private uint _currentSequence;
+        private bool _usesCommandSimulationTime;
         private float _pendingSimulationDeltaTimeSeconds;
         private float _remoteCommandAge;
         private uint _dispatchGeneration;
@@ -52,7 +53,9 @@ namespace Rutin.GameFramework.Player
                 _pendingLook,
                 _pendingJump,
                 _currentSequence,
-                _pendingSimulationDeltaTimeSeconds);
+                _usesCommandSimulationTime
+                    ? _pendingSimulationDeltaTimeSeconds
+                    : -1f);
 
         public void SetCommandSource(IPlayerCommandSource source)
         {
@@ -264,8 +267,12 @@ namespace Rutin.GameFramework.Player
             _pendingLook += command.Look;
             _pendingJump |= command.JumpPressed;
             _currentSequence = command.Sequence;
-            _pendingSimulationDeltaTimeSeconds =
-                command.SimulationDeltaTimeSeconds;
+            if (command.HasSimulationDeltaTime)
+            {
+                _usesCommandSimulationTime = true;
+                _pendingSimulationDeltaTimeSeconds +=
+                    command.SimulationDeltaTimeSeconds;
+            }
         }
 
         private void DispatchCommand(float deltaTime)
@@ -275,9 +282,11 @@ namespace Rutin.GameFramework.Player
                 _pendingLook,
                 _pendingJump,
                 _currentSequence,
-                _pendingSimulationDeltaTimeSeconds);
+                _usesCommandSimulationTime
+                    ? _pendingSimulationDeltaTimeSeconds
+                    : -1f);
             float simulationDeltaTime =
-                command.SimulationDeltaTimeSeconds > 0f
+                command.HasSimulationDeltaTime
                     ? command.SimulationDeltaTimeSeconds
                     : deltaTime;
             _pendingLook = Vector2.zero;
@@ -387,6 +396,7 @@ namespace Rutin.GameFramework.Player
             _hasRemoteCommand = false;
             _remoteCommandAge = 0f;
             _currentSequence = 0;
+            _usesCommandSimulationTime = false;
             _pendingSimulationDeltaTimeSeconds = 0f;
             if (resetSequence)
             {

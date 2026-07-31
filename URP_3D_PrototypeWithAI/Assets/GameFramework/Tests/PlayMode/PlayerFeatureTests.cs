@@ -561,6 +561,49 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_AccumulatesRemoteCommandSimulationTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            commands.SetLocallyControlled(false);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.left,
+                        Vector2.one,
+                        false,
+                        sequence: 1,
+                        simulationDeltaTimeSeconds: 0.02f)),
+                Is.True);
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.right,
+                        Vector2.one,
+                        true,
+                        sequence: 2,
+                        simulationDeltaTimeSeconds: 0.03f)),
+                Is.True);
+
+            scheduler.Tick(0.1f, 0d);
+
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.right));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.one * 2f));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.True);
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.True);
+            Assert.That(consumer.LastDeltaTime, Is.EqualTo(0.05f).Within(0.0001f));
+
+            scheduler.Tick(0.1f, 0d);
+
+            Assert.That(consumer.LastCommand.HasSimulationDeltaTime, Is.True);
+            Assert.That(consumer.LastDeltaTime, Is.Zero);
+        }
+
+        [Test]
         public void Motor_ReportsInternallyDiscardedSimulationTime()
         {
             BudgetedTickScheduler scheduler = new();

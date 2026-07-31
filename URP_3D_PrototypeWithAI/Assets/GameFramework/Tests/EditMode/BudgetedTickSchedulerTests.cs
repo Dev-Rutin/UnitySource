@@ -172,6 +172,31 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(
                 stats.DiscardedDeltaTimeSeconds,
                 Is.EqualTo(0.75d).Within(0.0001d));
+            Assert.That(
+                stats.MaximumDiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
+        }
+
+        [Test]
+        public void Tick_DistinguishesAggregateAndMaximumDiscardedTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            scheduler.Register(new ProbeTickable());
+            scheduler.Register(new ProbeTickable());
+
+            TickBatchStats stats = scheduler.Tick(
+                1f,
+                0d,
+                int.MaxValue,
+                0.25f);
+
+            Assert.That(stats.ClampedTickCount, Is.EqualTo(2));
+            Assert.That(
+                stats.DiscardedDeltaTimeSeconds,
+                Is.EqualTo(1.5d).Within(0.0001d));
+            Assert.That(
+                stats.MaximumDiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
         }
 
         [Test]
