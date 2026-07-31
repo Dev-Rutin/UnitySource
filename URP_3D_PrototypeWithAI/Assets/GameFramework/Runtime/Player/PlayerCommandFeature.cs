@@ -86,13 +86,15 @@ namespace Rutin.GameFramework.Player
         }
 
         /// <summary>
-        /// Supplies a replay, server-authoritative, or remote-owned command. Non-zero sequence
-        /// values must be newer than the last accepted sequence; zero opts out of ordering.
+        /// Supplies a replay, server-authoritative, or remote-owned command while this feature
+        /// is not locally controlled. Non-zero sequence values must be newer than the last
+        /// accepted sequence; zero opts out of ordering.
         /// </summary>
         public bool SubmitCommand(PlayerCommand command)
         {
             if (!IsFeatureActive ||
                 !simulationEnabled ||
+                locallyControlled ||
                 !AcceptRemoteSequence(command.Sequence))
             {
                 return false;

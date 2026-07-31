@@ -8,6 +8,8 @@ namespace Rutin.GameFramework.InputSystem
     /// Optional local-device adapter. The runtime player assembly depends only on
     /// IPlayerCommandSource, so network or replay sources can replace this component.
     /// </summary>
+    // GameplayEntity initializes at -9000; sample after it wires features but before
+    // TickSchedulerService runs at -8990.
     [DefaultExecutionOrder(-8995)]
     [DisallowMultipleComponent]
     public sealed class InputSystemPlayerCommandSource :

@@ -33,7 +33,9 @@ namespace Rutin.GameFramework.Player
 
     /// <summary>
     /// Replaceable producer for local device, AI possession, replay, or network commands.
-    /// Implementations must not allocate from ReadCommand.
+    /// Implementations must not allocate from ReadCommand. MonoBehaviour sources that sample
+    /// frame input in Update must execute before TickSchedulerService so the same frame consumes
+    /// the sample; frame-latched implementations should also implement IBufferedPlayerCommandSource.
     /// </summary>
     public interface IPlayerCommandSource
     {

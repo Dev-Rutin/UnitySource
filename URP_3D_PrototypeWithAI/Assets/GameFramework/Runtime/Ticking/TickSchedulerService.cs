@@ -39,6 +39,8 @@ namespace Rutin.GameFramework.Ticking
 
         public long TotalQuarantinedCount { get; private set; }
 
+        public double TotalDiscardedDeltaTimeSeconds { get; private set; }
+
         protected override void RegisterServiceContracts()
         {
             RegisterContract<ITickScheduler>();
@@ -48,6 +50,7 @@ namespace Rutin.GameFramework.Ticking
         {
             _hasShutDown = false;
             TotalQuarantinedCount = 0;
+            TotalDiscardedDeltaTimeSeconds = 0d;
             EnsureScheduler();
         }
 
@@ -72,6 +75,8 @@ namespace Rutin.GameFramework.Ticking
                 frameBudgetMilliseconds,
                 maxVisitedItemsPerFrame,
                 maxAccumulatedDeltaTime);
+            TotalDiscardedDeltaTimeSeconds +=
+                LastFrameStats.DiscardedDeltaTimeSeconds;
             if (LastFrameStats.QuarantinedCount > 0)
             {
                 TotalQuarantinedCount += LastFrameStats.QuarantinedCount;
@@ -125,7 +130,9 @@ namespace Rutin.GameFramework.Ticking
                 Debug.LogWarning(
                     $"{nameof(TickSchedulerService)} has exceeded its processing budget for " +
                     $"{_consecutiveSaturatedFrames} consecutive frames. Registered=" +
-                    $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}.",
+                    $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}, " +
+                    $"clamped={LastFrameStats.ClampedTickCount}, discardedSeconds=" +
+                    $"{TotalDiscardedDeltaTimeSeconds:F3}.",
                     this);
             }
         }

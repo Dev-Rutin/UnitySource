@@ -155,6 +155,26 @@ namespace Rutin.GameFramework.Tests.EditMode
         }
 
         [Test]
+        public void Tick_ReportsClampedSimulationTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ProbeTickable tickable = new();
+            scheduler.Register(tickable);
+
+            TickBatchStats stats = scheduler.Tick(
+                1f,
+                0d,
+                int.MaxValue,
+                0.25f);
+
+            Assert.That(tickable.LastDeltaTime, Is.EqualTo(0.25f).Within(0.0001f));
+            Assert.That(stats.ClampedTickCount, Is.EqualTo(1));
+            Assert.That(
+                stats.DiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
+        }
+
+        [Test]
         public void Unregister_SwapRemovalKeepsRemainingTickables()
         {
             BudgetedTickScheduler scheduler = new();

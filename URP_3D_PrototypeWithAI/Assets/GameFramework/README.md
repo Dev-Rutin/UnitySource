@@ -12,6 +12,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   population. Disabled tickables still consume one visit from the item budget.
 - `TickSchedulerService` quarantines only repeated failures, rate-limits exception logs,
   and exposes the session total through `TotalQuarantinedCount`.
+- Time budgets are checked between tickables, so size them for the worst-case bounded work of one
+  player stack. `LastFrameStats.ClampedTickCount` / `DiscardedDeltaTimeSeconds` and
+  `TotalDiscardedDeltaTimeSeconds` expose simulation time discarded by the accumulated-delta cap.
 - Scheduled features use an allocation-conscious dense observer registry to invalidate cached
   default services and bind to a replacement scheduler, including while the feature is inactive.
 - Scheduler clear removes registrations before observer callbacks, so recovery callbacks can
@@ -38,12 +41,17 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   This adapter uses one local `Update()` to latch frame-only Input System edges and deltas so a
   budget-delayed simulation tick cannot lose them. Ownership, simulation, deactivation, and
   scheduler-loss transitions discard the adapter's buffered input so stale edges cannot replay.
+- Custom `IPlayerCommandSource` components that sample frame input in `Update()` must execute
+  after `GameplayEntity` initialization and before `TickSchedulerService`; use an execution order
+  between `-9000` and `-8990`. Frame-latched sources should implement
+  `IBufferedPlayerCommandSource` so ownership and scheduler transitions can discard stale edges.
 - For remote/server control, call `SetLocallyControlled(false)` and submit immutable
   `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
   on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
   values reject duplicate/out-of-order packets, and remote movement becomes neutral after the
   configured command timeout while gravity and other neutral simulation continue. Commands
-  submitted while the feature is inactive are rejected instead of accumulating stale edges.
+  submitted while the feature is inactive or locally controlled are rejected instead of
+  accumulating stale edges or mixing remote input into the local command stream.
 - Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
   clear held input and reset all command consumers.
 - Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
@@ -97,8 +105,8 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 26 passed, 0 failed | 0.242 s test duration |
-| PlayMode | 41 passed, 0 failed | 0.877 s test duration |
+| EditMode | 27 passed, 0 failed | 0.312 s test duration |
+| PlayMode | 42 passed, 0 failed | 1.111 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
 | 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
 

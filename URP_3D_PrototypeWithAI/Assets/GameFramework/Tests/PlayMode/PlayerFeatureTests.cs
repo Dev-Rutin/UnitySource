@@ -207,6 +207,31 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_RejectsRemoteCommandsWhileLocallyControlled()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out _,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    new PlayerCommand(
+                        Vector2.up,
+                        new Vector2(45f, 10f),
+                        true,
+                        1)),
+                Is.False);
+
+            scheduler.Tick(0.016f, 0d);
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.JumpPressed, Is.False);
+        }
+
+        [Test]
         public void CommandFeature_RemoteTimeoutContinuesNeutralDispatch()
         {
             BudgetedTickScheduler scheduler = new();
