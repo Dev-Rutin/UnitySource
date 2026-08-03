@@ -55,17 +55,25 @@ namespace Rutin.GameFramework.Npc
     /// </summary>
     public struct NpcBlackboard
     {
-        public Vector3 AgentPosition { get; private set; }
+        private Vector3 _agentPosition;
+        private Vector3 _homePosition;
+        private bool _hasTarget;
+        private Object _target;
+        private Vector3 _targetPosition;
+        private float _targetDistanceSquared;
 
-        public Vector3 HomePosition { get; private set; }
+        public readonly Vector3 AgentPosition => _agentPosition;
 
-        public bool HasTarget { get; private set; }
+        public readonly Vector3 HomePosition => _homePosition;
 
-        public Object Target { get; private set; }
+        public readonly bool HasTarget => _hasTarget;
 
-        public Vector3 TargetPosition { get; private set; }
+        public readonly Object Target => _target;
 
-        public float TargetDistanceSquared { get; private set; }
+        public readonly Vector3 TargetPosition => _targetPosition;
+
+        public readonly float TargetDistanceSquared =>
+            _targetDistanceSquared;
 
         public bool SetTarget(Object target, Vector3 position)
         {
@@ -75,12 +83,12 @@ namespace Rutin.GameFramework.Npc
                 return false;
             }
 
-            Vector3 offset = position - AgentPosition;
+            Vector3 offset = position - _agentPosition;
             float distanceSquared = offset.sqrMagnitude;
-            HasTarget = true;
-            Target = target;
-            TargetPosition = position;
-            TargetDistanceSquared = float.IsNaN(distanceSquared) ||
+            _hasTarget = true;
+            _target = target;
+            _targetPosition = position;
+            _targetDistanceSquared = float.IsNaN(distanceSquared) ||
                 float.IsInfinity(distanceSquared)
                     ? float.MaxValue
                     : distanceSquared;
@@ -89,22 +97,22 @@ namespace Rutin.GameFramework.Npc
 
         public void ClearTarget()
         {
-            HasTarget = false;
-            Target = null;
-            TargetPosition = Vector3.zero;
-            TargetDistanceSquared = float.PositiveInfinity;
+            _hasTarget = false;
+            _target = null;
+            _targetPosition = Vector3.zero;
+            _targetDistanceSquared = float.PositiveInfinity;
         }
 
         internal void Reset(Vector3 agentPosition)
         {
-            AgentPosition = SanitizePosition(agentPosition);
-            HomePosition = AgentPosition;
+            _agentPosition = SanitizePosition(agentPosition);
+            _homePosition = _agentPosition;
             ClearTarget();
         }
 
         internal void BeginSensing(Vector3 agentPosition)
         {
-            AgentPosition = SanitizePosition(agentPosition);
+            _agentPosition = SanitizePosition(agentPosition);
             ClearTarget();
         }
 

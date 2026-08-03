@@ -50,6 +50,10 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             public NpcDecision Decision { get; set; }
 
+            public Action DecideAction { get; set; }
+
+            public int CallCount { get; private set; }
+
             public int ResetCount { get; private set; }
 
             public bool TryDecide(
@@ -57,11 +61,37 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 float deltaTime,
                 out NpcDecision decision)
             {
+                CallCount++;
+                DecideAction?.Invoke();
                 decision = Decision;
                 return HandlesDecision;
             }
 
             public void ResetNpcDecisionState()
+            {
+                ResetCount++;
+            }
+        }
+
+        private sealed class ProbeSensor : MonoBehaviour, INpcSensor
+        {
+            public int SensorOrder { get; set; }
+
+            public Action SenseAction { get; set; }
+
+            public int SenseCount { get; private set; }
+
+            public int ResetCount { get; private set; }
+
+            public void Sense(
+                ref NpcBlackboard blackboard,
+                float deltaTime)
+            {
+                SenseCount++;
+                SenseAction?.Invoke();
+            }
+
+            public void ResetNpcSensorState()
             {
                 ResetCount++;
             }
@@ -149,12 +179,20 @@ namespace Rutin.GameFramework.Tests.PlayMode
             fallback.Decision = new NpcDecision(
                 NpcBehaviourState.Patrol,
                 Vector3.forward);
+            ProbeDecisionProvider rejecting =
+                npc.AddComponent<ProbeDecisionProvider>();
+            rejecting.DecisionOrder = -200;
+            rejecting.HandlesDecision = false;
+            rejecting.Decision = new NpcDecision(
+                NpcBehaviourState.Chase,
+                Vector3.right);
             ProbeDecisionProvider overrideProvider =
                 npc.AddComponent<ProbeDecisionProvider>();
             overrideProvider.DecisionOrder = -100;
             overrideProvider.Decision = new NpcDecision(
                 NpcBehaviourState.Chase,
                 Vector3.left);
+            Assert.That(brain.RegisterDecisionProvider(rejecting), Is.True);
             Assert.That(brain.RegisterDecisionProvider(fallback), Is.True);
             Assert.That(brain.RegisterDecisionProvider(overrideProvider), Is.True);
 
@@ -188,7 +226,13 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             brain.SetDecisionEnabled(false);
             Assert.That(fallback.ResetCount, Is.GreaterThan(0));
-            scheduler.Tick(0.016f, 0d);
+            int resetCountAfterDisable = fallback.ResetCount;
+            for (int i = 0; i < 10; i++)
+            {
+                scheduler.Tick(0.016f, 0d);
+            }
+
+            Assert.That(fallback.ResetCount, Is.EqualTo(resetCountAfterDisable));
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
 
             brain.SetDecisionEnabled(true);
@@ -197,6 +241,68 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 brain.CurrentDecision.State,
                 Is.EqualTo(NpcBehaviourState.Idle));
+        }
+
+        [Test]
+        public void Brain_ReentrantSensorResetCancelsTheEvaluation()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateNpc(
+                scheduler,
+                "Reentrant Sensor NPC",
+                out NpcBrainFeature brain,
+                out _,
+                out ProbeCommandConsumer consumer);
+            ProbeSensor resetSensor = npc.AddComponent<ProbeSensor>();
+            resetSensor.SensorOrder = -100;
+            ProbeSensor laterSensor = npc.AddComponent<ProbeSensor>();
+            laterSensor.SensorOrder = 100;
+            resetSensor.SenseAction = () => brain.SetDecisionEnabled(false);
+            Assert.That(brain.RegisterSensor(resetSensor), Is.True);
+            Assert.That(brain.RegisterSensor(laterSensor), Is.True);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(resetSensor.SenseCount, Is.EqualTo(1));
+            Assert.That(laterSensor.SenseCount, Is.Zero);
+            Assert.That(brain.DecisionCount, Is.Zero);
+            Assert.That(brain.CurrentDecision.State, Is.EqualTo(NpcBehaviourState.Idle));
+            Assert.That(consumer.LastCommand, Is.EqualTo(PlayerCommand.Neutral));
+        }
+
+        [Test]
+        public void Brain_ReentrantProviderResetCancelsCommitAndLaterProviders()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateNpc(
+                scheduler,
+                "Reentrant Provider NPC",
+                out NpcBrainFeature brain,
+                out _,
+                out ProbeCommandConsumer consumer);
+            ProbeDecisionProvider resetProvider =
+                npc.AddComponent<ProbeDecisionProvider>();
+            resetProvider.DecisionOrder = -100;
+            resetProvider.Decision = new NpcDecision(
+                NpcBehaviourState.Chase,
+                Vector3.right);
+            resetProvider.DecideAction = () => brain.SetDecisionEnabled(false);
+            ProbeDecisionProvider laterProvider =
+                npc.AddComponent<ProbeDecisionProvider>();
+            laterProvider.DecisionOrder = 100;
+            laterProvider.Decision = new NpcDecision(
+                NpcBehaviourState.Patrol,
+                Vector3.forward);
+            Assert.That(brain.RegisterDecisionProvider(resetProvider), Is.True);
+            Assert.That(brain.RegisterDecisionProvider(laterProvider), Is.True);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(resetProvider.CallCount, Is.EqualTo(1));
+            Assert.That(laterProvider.CallCount, Is.Zero);
+            Assert.That(brain.DecisionCount, Is.Zero);
+            Assert.That(brain.CurrentDecision.State, Is.EqualTo(NpcBehaviourState.Idle));
+            Assert.That(consumer.LastCommand, Is.EqualTo(PlayerCommand.Neutral));
         }
 
         [Test]
@@ -265,6 +371,72 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             Assert.That(brain.DecisionIntervalSeconds, Is.Zero);
             Assert.That(brain.TimeUntilNextDecisionSeconds, Is.Zero);
+
+            CreateNpc(
+                scheduler,
+                "Second Cadence NPC",
+                out NpcBrainFeature secondBrain,
+                out _,
+                out _,
+                activate: true,
+                configureImmediateCadence: false);
+            brain.ConfigureDecisionCadence(1f);
+            secondBrain.ConfigureDecisionCadence(1f);
+            brain.SetStaggerSeed(42u);
+            secondBrain.SetStaggerSeed(42u);
+
+            Assert.That(brain.HasExplicitStaggerSeed, Is.True);
+            Assert.That(
+                secondBrain.TimeUntilNextDecisionSeconds,
+                Is.EqualTo(brain.TimeUntilNextDecisionSeconds));
+
+            secondBrain.ClearStaggerSeed();
+            Assert.That(secondBrain.HasExplicitStaggerSeed, Is.False);
+        }
+
+        [Test]
+        public void Brain_UsesMotorMovementSpaceAndTurnsLookTowardIntent()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Oriented NPC");
+            npc.SetActive(false);
+            npc.AddComponent<CharacterController>();
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcBrainFeature brain = npc.AddComponent<NpcBrainFeature>();
+            PlayerCharacterMotorFeature motor =
+                npc.AddComponent<PlayerCharacterMotorFeature>();
+            PlayerLookFeature look = npc.AddComponent<PlayerLookFeature>();
+            TransformTargetSensorFeature sensor =
+                npc.AddComponent<TransformTargetSensorFeature>();
+            npc.AddComponent<IdlePatrolChaseDecisionFeature>();
+            ProbeCommandConsumer consumer =
+                npc.AddComponent<ProbeCommandConsumer>();
+            GameObject yawObject = CreateObject("NPC Yaw Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            yawObject.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+            look.SetViewTransforms(yawObject.transform, null);
+            GameObject target = CreateObject("Oriented NPC Target");
+            target.transform.position = Vector3.forward * 10f;
+            sensor.SetTarget(target.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.RegisterConsumer(consumer);
+            brain.ConfigureDecisionCadence(0f, 0f);
+            npc.SetActive(true);
+
+            Assert.That(brain.MovementSpace, Is.SameAs(motor.MovementSpace));
+            Assert.That(brain.MovementSpace, Is.SameAs(yawObject.transform));
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(consumer.LastCommand.Move.y, Is.GreaterThan(0.99f));
+            Assert.That(
+                Mathf.Abs(consumer.LastCommand.Look.x),
+                Is.EqualTo(90f).Within(0.01f));
+            Assert.That(
+                Vector3.Dot(yawObject.transform.forward, Vector3.forward),
+                Is.GreaterThan(0.99f));
         }
 
         [Test]

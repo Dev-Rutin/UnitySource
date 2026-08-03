@@ -29,16 +29,26 @@ namespace Rutin.GameFramework.Npc
 
         private readonly List<INpcSensor> _sensors = new(4);
         private readonly List<INpcSensor> _sensorSnapshot = new(4);
+        private readonly List<INpcSensor> _sensorResetSnapshot = new(4);
         private readonly List<INpcDecisionProvider> _decisionProviders = new(4);
         private readonly List<INpcDecisionProvider> _decisionSnapshot = new(4);
+        private readonly List<INpcDecisionProvider> _decisionResetSnapshot = new(4);
         private PlayerCommandFeature _commands;
+        private PlayerCharacterMotorFeature _motor;
+        private PlayerLookFeature _look;
         private NpcBlackboard _blackboard;
         private NpcDecision _currentDecision;
         private float _decisionElapsedSeconds;
         private float _timeUntilNextDecisionSeconds;
         private bool _pendingJump;
+        private bool _hasExplicitStaggerSeed;
+        private uint _staggerSeed;
         private uint _commandSequence;
         private uint _decisionCount;
+        private uint _evaluationGeneration;
+        private bool _runtimeStateClean;
+        private bool _isResettingRuntimeState;
+        private bool _isResettingParticipants;
 
         public override int InitializationOrder => -150;
 
@@ -52,7 +62,13 @@ namespace Rutin.GameFramework.Npc
             Mathf.Max(0f, _timeUntilNextDecisionSeconds);
 
         public Transform MovementSpace =>
-            movementSpace != null ? movementSpace : transform;
+            _motor != null
+                ? _motor.MovementSpace
+                : movementSpace != null
+                    ? movementSpace
+                    : transform;
+
+        public bool HasExplicitStaggerSeed => _hasExplicitStaggerSeed;
 
         public NpcBlackboard Blackboard => _blackboard;
 
@@ -68,7 +84,7 @@ namespace Rutin.GameFramework.Npc
             }
 
             decisionEnabled = value;
-            ResetRuntimeState();
+            ResetRuntimeState(true);
         }
 
         /// <summary>
@@ -87,9 +103,30 @@ namespace Rutin.GameFramework.Npc
             _timeUntilNextDecisionSeconds = ResolveInitialDelay();
         }
 
+        /// <summary>
+        /// Uses a stable spawn/network identifier to make automatic staggering repeatable
+        /// across processes and replay sessions. Explicit initial delays still take priority.
+        /// </summary>
+        public void SetStaggerSeed(uint seed)
+        {
+            _hasExplicitStaggerSeed = true;
+            _staggerSeed = seed;
+            _decisionElapsedSeconds = 0f;
+            _timeUntilNextDecisionSeconds = ResolveInitialDelay();
+        }
+
+        public void ClearStaggerSeed()
+        {
+            _hasExplicitStaggerSeed = false;
+            _staggerSeed = 0;
+            _decisionElapsedSeconds = 0f;
+            _timeUntilNextDecisionSeconds = ResolveInitialDelay();
+        }
+
         public void SetMovementSpace(Transform value)
         {
             movementSpace = value;
+            _motor?.SetMovementSpace(value);
         }
 
         public bool RegisterSensor(INpcSensor sensor)
@@ -112,6 +149,7 @@ namespace Rutin.GameFramework.Npc
             }
 
             _sensors.Insert(insertIndex, sensor);
+            _runtimeStateClean = false;
             return true;
         }
 
@@ -125,6 +163,7 @@ namespace Rutin.GameFramework.Npc
 
             _sensors.RemoveAt(index);
             _blackboard.ClearTarget();
+            _runtimeStateClean = false;
             return true;
         }
 
@@ -148,6 +187,7 @@ namespace Rutin.GameFramework.Npc
             }
 
             _decisionProviders.Insert(insertIndex, provider);
+            _runtimeStateClean = false;
             return true;
         }
 
@@ -162,6 +202,7 @@ namespace Rutin.GameFramework.Npc
             _decisionProviders.RemoveAt(index);
             _currentDecision = NpcDecision.Idle;
             _pendingJump = false;
+            _runtimeStateClean = false;
             return true;
         }
 
@@ -172,6 +213,7 @@ namespace Rutin.GameFramework.Npc
                 return PlayerCommand.Neutral;
             }
 
+            _runtimeStateClean = false;
             float elapsed = SanitizeNonNegative(deltaTime);
             _decisionElapsedSeconds = SaturatingAdd(
                 _decisionElapsedSeconds,
@@ -180,47 +222,64 @@ namespace Rutin.GameFramework.Npc
             if (decisionIntervalSeconds <= 0f ||
                 _timeUntilNextDecisionSeconds <= 0f)
             {
+                uint generation = _evaluationGeneration;
                 EvaluateDecision(_decisionElapsedSeconds);
+                if (generation != _evaluationGeneration ||
+                    !IsInputAvailable)
+                {
+                    return PlayerCommand.Neutral;
+                }
+
                 _decisionElapsedSeconds = 0f;
                 _timeUntilNextDecisionSeconds =
                     SanitizeNonNegative(decisionIntervalSeconds);
             }
 
-            Vector2 move = ConvertWorldMoveToLocal(_currentDecision.WorldMove);
+            BuildMovementAndLookCommand(
+                _currentDecision.WorldMove,
+                out Vector2 move,
+                out Vector2 look);
             bool jumpPressed = _pendingJump;
             _pendingJump = false;
             return new PlayerCommand(
                 move,
-                Vector2.zero,
+                look,
                 jumpPressed,
                 NextCommandSequence());
         }
 
         public void DiscardBufferedInput()
         {
-            ResetRuntimeState();
+            ResetRuntimeState(false);
         }
 
         protected override void OnFeatureInitialized()
         {
             _commands = GetComponent<PlayerCommandFeature>();
+            _motor = GetComponent<PlayerCharacterMotorFeature>();
+            _look = GetComponent<PlayerLookFeature>();
+            if (_motor != null && movementSpace != null)
+            {
+                _motor.SetMovementSpace(movementSpace);
+            }
+
             _commands.SetCommandSource(this);
-            ResetRuntimeState();
+            ResetRuntimeState(true);
         }
 
         protected override void OnFeatureActivated()
         {
-            ResetRuntimeState();
+            ResetRuntimeState(true);
         }
 
         protected override void OnFeatureDeactivated()
         {
-            ResetRuntimeState();
+            ResetRuntimeState(true);
         }
 
         protected override void OnFeatureShutdown()
         {
-            ResetRuntimeState();
+            ResetRuntimeState(true);
             if (_commands != null &&
                 ReferenceEquals(_commands.CommandSource, this))
             {
@@ -228,16 +287,25 @@ namespace Rutin.GameFramework.Npc
             }
 
             _commands = null;
+            _motor = null;
+            _look = null;
             _sensors.Clear();
             _sensorSnapshot.Clear();
+            _sensorResetSnapshot.Clear();
             _decisionProviders.Clear();
             _decisionSnapshot.Clear();
+            _decisionResetSnapshot.Clear();
         }
 
         private void EvaluateDecision(float deltaTime)
         {
+            uint generation = _evaluationGeneration;
             _blackboard.BeginSensing(transform.position);
-            RunSensors(deltaTime);
+            RunSensors(deltaTime, generation);
+            if (generation != _evaluationGeneration)
+            {
+                return;
+            }
 
             NpcDecision nextDecision = NpcDecision.Idle;
             _decisionSnapshot.Clear();
@@ -246,6 +314,11 @@ namespace Rutin.GameFramework.Npc
             {
                 for (int i = 0; i < _decisionSnapshot.Count; i++)
                 {
+                    if (generation != _evaluationGeneration)
+                    {
+                        break;
+                    }
+
                     INpcDecisionProvider provider = _decisionSnapshot[i];
                     if (IndexOfDecisionProvider(provider) < 0)
                     {
@@ -268,8 +341,9 @@ namespace Rutin.GameFramework.Npc
                         if (provider.TryDecide(
                             in _blackboard,
                             deltaTime,
-                            out nextDecision))
+                            out NpcDecision candidate))
                         {
+                            nextDecision = candidate;
                             break;
                         }
                     }
@@ -287,12 +361,17 @@ namespace Rutin.GameFramework.Npc
                 _decisionSnapshot.Clear();
             }
 
+            if (generation != _evaluationGeneration)
+            {
+                return;
+            }
+
             _currentDecision = nextDecision;
             _pendingJump |= nextDecision.JumpPressed;
             _decisionCount++;
         }
 
-        private void RunSensors(float deltaTime)
+        private void RunSensors(float deltaTime, uint generation)
         {
             _sensorSnapshot.Clear();
             _sensorSnapshot.AddRange(_sensors);
@@ -300,6 +379,11 @@ namespace Rutin.GameFramework.Npc
             {
                 for (int i = 0; i < _sensorSnapshot.Count; i++)
                 {
+                    if (generation != _evaluationGeneration)
+                    {
+                        break;
+                    }
+
                     INpcSensor sensor = _sensorSnapshot[i];
                     if (IndexOfSensor(sensor) < 0)
                     {
@@ -336,27 +420,53 @@ namespace Rutin.GameFramework.Npc
             }
         }
 
-        private void ResetRuntimeState()
+        private void ResetRuntimeState(bool force)
         {
-            ResetParticipants();
-            _blackboard.Reset(transform.position);
-            _currentDecision = NpcDecision.Idle;
-            _decisionElapsedSeconds = 0f;
-            _timeUntilNextDecisionSeconds = ResolveInitialDelay();
-            _pendingJump = false;
-            _commandSequence = 0;
-            _decisionCount = 0;
+            if (!force && _runtimeStateClean)
+            {
+                return;
+            }
+
+            _evaluationGeneration++;
+            if (_isResettingRuntimeState)
+            {
+                return;
+            }
+
+            _isResettingRuntimeState = true;
+            try
+            {
+                ResetParticipants();
+                _blackboard.Reset(transform.position);
+                _currentDecision = NpcDecision.Idle;
+                _decisionElapsedSeconds = 0f;
+                _timeUntilNextDecisionSeconds = ResolveInitialDelay();
+                _pendingJump = false;
+                _commandSequence = 0;
+                _decisionCount = 0;
+                _runtimeStateClean = true;
+            }
+            finally
+            {
+                _isResettingRuntimeState = false;
+            }
         }
 
         private void ResetParticipants()
         {
-            _sensorSnapshot.Clear();
-            _sensorSnapshot.AddRange(_sensors);
+            if (_isResettingParticipants)
+            {
+                return;
+            }
+
+            _isResettingParticipants = true;
+            _sensorResetSnapshot.Clear();
+            _sensorResetSnapshot.AddRange(_sensors);
             try
             {
-                for (int i = 0; i < _sensorSnapshot.Count; i++)
+                for (int i = 0; i < _sensorResetSnapshot.Count; i++)
                 {
-                    INpcSensor sensor = _sensorSnapshot[i];
+                    INpcSensor sensor = _sensorResetSnapshot[i];
                     if (IndexOfSensor(sensor) < 0)
                     {
                         continue;
@@ -383,16 +493,16 @@ namespace Rutin.GameFramework.Npc
             }
             finally
             {
-                _sensorSnapshot.Clear();
+                _sensorResetSnapshot.Clear();
             }
 
-            _decisionSnapshot.Clear();
-            _decisionSnapshot.AddRange(_decisionProviders);
+            _decisionResetSnapshot.Clear();
+            _decisionResetSnapshot.AddRange(_decisionProviders);
             try
             {
-                for (int i = 0; i < _decisionSnapshot.Count; i++)
+                for (int i = 0; i < _decisionResetSnapshot.Count; i++)
                 {
-                    INpcDecisionProvider provider = _decisionSnapshot[i];
+                    INpcDecisionProvider provider = _decisionResetSnapshot[i];
                     if (IndexOfDecisionProvider(provider) < 0)
                     {
                         continue;
@@ -419,7 +529,46 @@ namespace Rutin.GameFramework.Npc
             }
             finally
             {
-                _decisionSnapshot.Clear();
+                _decisionResetSnapshot.Clear();
+                _isResettingParticipants = false;
+            }
+        }
+
+        private void BuildMovementAndLookCommand(
+            Vector3 worldMove,
+            out Vector2 move,
+            out Vector2 look)
+        {
+            move = ConvertWorldMoveToLocal(worldMove);
+            look = Vector2.zero;
+            if (_look == null ||
+                !_look.IsFeatureActive ||
+                worldMove.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+
+            Transform lookReference = _look.MovementReference;
+            Vector3 lookForward = lookReference.forward;
+            lookForward.y = 0f;
+            if (lookForward.sqrMagnitude <= 0.0001f)
+            {
+                lookForward = Vector3.forward;
+            }
+            else
+            {
+                lookForward.Normalize();
+            }
+
+            Vector3 desiredForward = worldMove.normalized;
+            float yawDelta = Vector3.SignedAngle(
+                lookForward,
+                desiredForward,
+                Vector3.up);
+            look = new Vector2(yawDelta, 0f);
+            if (ReferenceEquals(MovementSpace, lookReference))
+            {
+                move = Vector2.up * worldMove.magnitude;
             }
         }
 
@@ -458,7 +607,10 @@ namespace Rutin.GameFramework.Npc
                     interval);
             }
 
-            uint hash = unchecked((uint)GetInstanceID()) * 2654435761u;
+            uint seed = _hasExplicitStaggerSeed
+                ? _staggerSeed
+                : unchecked((uint)GetInstanceID());
+            uint hash = seed * 2654435761u;
             return (hash & 0x00FFFFFFu) /
                 16777216f * interval;
         }

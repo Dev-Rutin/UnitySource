@@ -132,14 +132,23 @@ This folder contains the allocation-conscious foundation for modular gameplay.
 - The value-type `NpcBlackboard` clears perception before every sensing pass. Pooling,
   deactivation, command ownership changes, simulation suspension, and scheduler replacement also
   reset decision state and buffered jump edges, preventing stale targets or commands from leaking
-  into a new authority session.
+  into a new authority session. Repeated ticks while decision input is unavailable are idempotent
+  and do not rescan/reset every registered participant.
 - `decisionIntervalSeconds` reduces expensive decision frequency while movement commands remain
-  held between decisions. The default negative initial delay deterministically staggers the first
-  decision over that interval; call `ConfigureDecisionCadence(interval, 0)` only when immediate,
-  synchronized evaluation is required.
-- World-space decision movement is sanitized and converted to the configured movement space with
-  no managed allocation. Network/server sensors can populate the blackboard directly and do not
-  depend on the Unity Input System.
+  held between decisions. The default negative initial delay staggers the first decision over that
+  interval. Its fallback instance-ID seed is stable only within the running process; call
+  `SetStaggerSeed` with a stable spawn/network identifier for replay, migration, or cross-process
+  repeatability. Call `ConfigureDecisionCadence(interval, 0)` only when immediate, synchronized
+  evaluation is required.
+- When `PlayerCharacterMotorFeature` is present, its `MovementSpace` is the single effective
+  movement reference. `SetMovementSpace` updates the motor as well, and an active
+  `PlayerLookFeature` receives a yaw command so world-space intent can face and move toward the
+  destination without an encode/decode space mismatch.
+- World-space decision movement is sanitized and converted without managed allocation.
+  Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
+  remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
+  Network/server sensors can populate the blackboard directly and do not depend on the Unity
+  Input System.
 
 ## Performance test
 
@@ -169,11 +178,11 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 28 passed, 0 failed | 0.223 s test duration |
-| PlayMode | 62 passed, 0 failed | 1.506 s test duration |
+| EditMode | 28 passed, 0 failed | 0.219 s test duration |
+| PlayMode | 65 passed, 0 failed | 1.582 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 58.735 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 94.620 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 53.595 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 106.094 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
