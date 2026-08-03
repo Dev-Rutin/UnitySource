@@ -134,7 +134,7 @@ namespace Rutin.GameFramework.Npc
             }
             else
             {
-                _baseFacingOffset = Quaternion.identity;
+                _baseFacingOffset = _baseYawRotation;
             }
 
             _hasCapturedBaseRotation = true;

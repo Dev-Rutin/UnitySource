@@ -691,6 +691,48 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void Facing_PreservesVerticalImportCorrectionWhenHeadingIsUndefined()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Vertically Corrected NPC");
+            npc.SetActive(false);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
+            GameObject yawObject = CreateObject("Vertical Import Correction Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            Quaternion baseRotation = Quaternion.Euler(-90f, 0f, 0f);
+            yawObject.transform.localRotation = baseRotation;
+            facing.SetYawRoot(yawObject.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            npc.SetActive(true);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.right, sequence: 1)),
+                Is.True);
+            scheduler.Tick(0.016f, 0d);
+
+            Quaternion expectedFacing =
+                Quaternion.AngleAxis(90f, Vector3.up) * baseRotation;
+            Assert.That(
+                Quaternion.Angle(
+                    yawObject.transform.localRotation,
+                    expectedFacing),
+                Is.LessThan(0.01f));
+
+            commands.SetSimulationEnabled(false);
+
+            Assert.That(
+                Quaternion.Angle(
+                    yawObject.transform.localRotation,
+                    baseRotation),
+                Is.LessThan(0.01f));
+        }
+
+        [Test]
         public void Facing_EntityRootPreservesSpawnRotationAndUsesAbsoluteYaw()
         {
             BudgetedTickScheduler scheduler = new();
