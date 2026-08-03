@@ -160,7 +160,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             target.SetActive(false);
             scheduler.Tick(0.016f, 0d);
 
-            Assert.That(brain.Blackboard.HasTarget, Is.False);
+            Assert.That(brain.HasTarget, Is.False);
             Assert.That(
                 brain.CurrentDecision.State,
                 Is.EqualTo(NpcBehaviourState.Patrol));
@@ -197,7 +197,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             scheduler.Tick(0.016f, 0d);
 
-            Assert.That(brain.Blackboard.HasTarget, Is.False);
+            Assert.That(brain.HasTarget, Is.False);
             Assert.That(
                 brain.CurrentDecision.State,
                 Is.EqualTo(NpcBehaviourState.Idle));
@@ -205,7 +205,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             sensor.ConfigureRanges(2f, 3f);
             scheduler.Tick(0.016f, 0.016d);
 
-            Assert.That(brain.Blackboard.HasTarget, Is.True);
+            Assert.That(brain.HasTarget, Is.True);
             Assert.That(
                 brain.CurrentDecision.State,
                 Is.EqualTo(NpcBehaviourState.Chase));
@@ -352,15 +352,15 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             Assert.That(targetSensor.SenseCount, Is.EqualTo(1));
             Assert.That(failingSensor.SenseCount, Is.EqualTo(1));
-            Assert.That(brain.Blackboard.HasTarget, Is.True);
-            Assert.That(brain.Blackboard.Target, Is.SameAs(target));
+            Assert.That(brain.HasTarget, Is.True);
+            Assert.That(brain.Target, Is.SameAs(target));
 
             scheduler.Tick(0.016f, 0.016d);
 
             Assert.That(targetSensor.SenseCount, Is.EqualTo(2));
             Assert.That(failingSensor.SenseCount, Is.EqualTo(1));
-            Assert.That(brain.Blackboard.HasTarget, Is.True);
-            Assert.That(brain.Blackboard.Target, Is.SameAs(target));
+            Assert.That(brain.HasTarget, Is.True);
+            Assert.That(brain.Target, Is.SameAs(target));
         }
 
         [Test]
@@ -417,14 +417,14 @@ namespace Rutin.GameFramework.Tests.PlayMode
             sensor.SetTarget(target.transform);
             npc.SetActive(true);
             firstScheduler.Tick(0.016f, 0d);
-            Assert.That(brain.Blackboard.HasTarget, Is.True);
+            Assert.That(brain.HasTarget, Is.True);
             Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(1));
 
             npc.SetActive(false);
             sensor.SetTarget(null);
             npc.SetActive(true);
 
-            Assert.That(brain.Blackboard.HasTarget, Is.False);
+            Assert.That(brain.HasTarget, Is.False);
             Assert.That(brain.DecisionCount, Is.Zero);
             firstScheduler.Tick(0.016f, 0d);
             Assert.That(brain.CurrentDecision.State, Is.EqualTo(NpcBehaviourState.Idle));
@@ -775,7 +775,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void Facing_DestroyedRigNeverRestoresItsBaseToEntityRoot()
+        public void Facing_DestroyedRigNeverTransfersFacingToEntityRoot()
         {
             BudgetedTickScheduler scheduler = new();
             GameObject npc = CreateObject("Destroyed Rig NPC");
@@ -795,6 +795,17 @@ namespace Rutin.GameFramework.Tests.PlayMode
             UnityEngine.Object.DestroyImmediate(yawObject);
             Quaternion gameplayRotation = Quaternion.Euler(0f, 135f, 0f);
             npc.transform.rotation = gameplayRotation;
+
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.right, sequence: 1)),
+                Is.True);
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(
+                Quaternion.Angle(npc.transform.rotation, gameplayRotation),
+                Is.LessThan(0.01f));
+
             commands.SetSimulationEnabled(false);
 
             Assert.That(

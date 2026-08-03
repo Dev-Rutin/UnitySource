@@ -28,7 +28,8 @@ namespace Rutin.GameFramework.Npc
 
         public int CommandOrder => -100;
 
-        public Transform YawRoot => yawRoot != null ? yawRoot : transform;
+        public Transform YawRoot =>
+            ReferenceEquals(yawRoot, null) ? transform : yawRoot;
 
         public void SetYawRoot(Transform value)
         {
@@ -55,6 +56,11 @@ namespace Rutin.GameFramework.Npc
             }
 
             Transform activeYawRoot = YawRoot;
+            if (activeYawRoot == null)
+            {
+                return;
+            }
+
             Vector3 worldForward = command.HasWorldFacing
                 ? command.GetWorldFacingDirection()
                 : command.MoveSpace == PlayerCommandMoveSpace.World
@@ -120,7 +126,13 @@ namespace Rutin.GameFramework.Npc
                 return;
             }
 
-            _capturedYawRoot = YawRoot;
+            Transform activeYawRoot = YawRoot;
+            if (activeYawRoot == null)
+            {
+                return;
+            }
+
+            _capturedYawRoot = activeYawRoot;
             _baseYawRotation = _capturedYawRoot.localRotation;
             Vector3 baseForward = _baseYawRotation * Vector3.forward;
             baseForward.y = 0f;
@@ -153,7 +165,8 @@ namespace Rutin.GameFramework.Npc
         }
 
         private bool UsesEntityRoot =>
-            yawRoot == null || ReferenceEquals(yawRoot, transform);
+            ReferenceEquals(yawRoot, null) ||
+            ReferenceEquals(yawRoot, transform);
 
         private static float SanitizeNonNegative(float value)
         {

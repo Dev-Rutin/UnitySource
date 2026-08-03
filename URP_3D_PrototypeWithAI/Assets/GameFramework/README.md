@@ -171,8 +171,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   pooling resets so a proxy does not reject a restarted sequence as stale.
   Network/server sensor components populate the blackboard through the
   `INpcSensor.Sense(ref NpcBlackboard, ...)` parameter and do not depend on the Unity Input
-  System. `NpcBrainFeature.Blackboard` is a live `ref readonly` observation view, not a mutation
-  entry point.
+  System. External observers use the read-only `NpcBrainFeature` perception properties such as
+  `HasTarget`, `TargetPosition`, and `TargetDistanceSquared`; the mutable blackboard is never
+  exposed as an observation API.
 
 ## Performance test
 

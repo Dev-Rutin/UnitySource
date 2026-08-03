@@ -59,11 +59,18 @@ namespace Rutin.GameFramework.Npc
 
         public bool HasExplicitStaggerSeed => _hasExplicitStaggerSeed;
 
-        /// <summary>
-        /// Live read-only view of the current sensing result. Sensors mutate the blackboard only
-        /// through the <see cref="INpcSensor.Sense"/> ref parameter during a sensing pass.
-        /// </summary>
-        public ref readonly NpcBlackboard Blackboard => ref _blackboard;
+        public Vector3 AgentPosition => _blackboard.AgentPosition;
+
+        public Vector3 HomePosition => _blackboard.HomePosition;
+
+        public bool HasTarget => _blackboard.HasTarget;
+
+        public UnityEngine.Object Target => _blackboard.Target;
+
+        public Vector3 TargetPosition => _blackboard.TargetPosition;
+
+        public float TargetDistanceSquared =>
+            _blackboard.TargetDistanceSquared;
 
         public NpcDecision CurrentDecision => _currentDecision;
 
