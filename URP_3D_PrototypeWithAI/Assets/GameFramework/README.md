@@ -134,8 +134,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   contracts are ordered; the first decision provider returning `true` wins. Active feature
   components automatically register and unregister as they are attached, disabled, or removed.
 - `TransformTargetSensorFeature` consumes a target assigned by gameplay or interest management
-  without scene or physics scans. `IdlePatrolChaseDecisionFeature` is the basic idle/patrol/chase
-  example and can be replaced by more specialized policies.
+  without scene or physics scans. A detection radius of zero explicitly disables acquisition;
+  use a positive finite radius to enable it. `IdlePatrolChaseDecisionFeature` is the basic
+  idle/patrol/chase example and can be replaced by more specialized policies.
 - The value-type `NpcBlackboard` clears perception before every sensing pass. Pooling,
   deactivation, command ownership changes, simulation suspension, and scheduler replacement also
   reset decision state and buffered jump edges, preventing stale targets or commands from leaking
@@ -192,10 +193,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
 | EditMode | 28 passed, 0 failed | 0.199 s test duration |
-| PlayMode | 71 passed, 0 failed | 1.511 s test duration |
+| PlayMode | 73 passed, 0 failed | 1.811 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 52.989 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 102.948 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 75.602 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 122.314 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

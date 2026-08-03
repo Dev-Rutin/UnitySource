@@ -21,6 +21,7 @@ namespace Rutin.GameFramework.Npc
         [SerializeField] private float turnSpeedDegreesPerSecond;
 
         private PlayerCommandFeature _commands;
+        private Transform _capturedYawRoot;
         private Quaternion _baseYawRotation;
         private bool _hasCapturedBaseRotation;
 
@@ -98,30 +99,35 @@ namespace Rutin.GameFramework.Npc
         {
             _commands?.UnregisterConsumer(this);
             RestoreBaseRotation();
+            _capturedYawRoot = null;
             _hasCapturedBaseRotation = false;
             _commands = null;
         }
 
         private void CaptureBaseRotation()
         {
+            _capturedYawRoot = null;
             _hasCapturedBaseRotation = false;
             if (!IsFeatureInitialized || UsesEntityRoot)
             {
                 return;
             }
 
-            _baseYawRotation = YawRoot.localRotation;
+            _capturedYawRoot = YawRoot;
+            _baseYawRotation = _capturedYawRoot.localRotation;
             _hasCapturedBaseRotation = true;
         }
 
         private void RestoreBaseRotation()
         {
-            if (!_hasCapturedBaseRotation)
+            if (!_hasCapturedBaseRotation || _capturedYawRoot == null)
             {
+                _capturedYawRoot = null;
+                _hasCapturedBaseRotation = false;
                 return;
             }
 
-            YawRoot.localRotation = _baseYawRotation;
+            _capturedYawRoot.localRotation = _baseYawRotation;
         }
 
         private bool UsesEntityRoot =>

@@ -14,6 +14,7 @@ namespace Rutin.GameFramework.Npc
         [SerializeField] private Transform target;
 
         [Min(0f)]
+        [Tooltip("Zero disables target acquisition.")]
         [SerializeField] private float detectionRadius = 20f;
 
         [Min(0f)]
@@ -52,10 +53,19 @@ namespace Rutin.GameFramework.Npc
 
             Vector3 targetPosition = target.position;
             Vector3 offset = targetPosition - blackboard.AgentPosition;
+            float acquireRadius = SanitizeNonNegative(detectionRadius);
+            if (acquireRadius <= 0f)
+            {
+                _wasDetected = false;
+                return;
+            }
+
             float radius = _wasDetected
-                ? Mathf.Max(detectionRadius, lossRadius)
-                : detectionRadius;
-            if (radius > 0f && offset.sqrMagnitude > radius * radius)
+                ? Mathf.Max(
+                    acquireRadius,
+                    SanitizeNonNegative(lossRadius))
+                : acquireRadius;
+            if (offset.sqrMagnitude > radius * radius)
             {
                 _wasDetected = false;
                 return;

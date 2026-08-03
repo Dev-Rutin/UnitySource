@@ -164,6 +164,42 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void TargetSensor_ZeroDetectionRadiusDisablesAcquisition()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateNpc(
+                scheduler,
+                "Disabled Radius NPC",
+                out NpcBrainFeature brain,
+                out _,
+                out _,
+                activate: false);
+            TransformTargetSensorFeature sensor =
+                npc.AddComponent<TransformTargetSensorFeature>();
+            npc.AddComponent<IdlePatrolChaseDecisionFeature>();
+            GameObject target = CreateObject("Disabled Radius Target");
+            target.transform.position = Vector3.right;
+            sensor.SetTarget(target.transform);
+            sensor.ConfigureRanges(0f, 0f);
+            npc.SetActive(true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(brain.Blackboard.HasTarget, Is.False);
+            Assert.That(
+                brain.CurrentDecision.State,
+                Is.EqualTo(NpcBehaviourState.Idle));
+
+            sensor.ConfigureRanges(2f, 3f);
+            scheduler.Tick(0.016f, 0.016d);
+
+            Assert.That(brain.Blackboard.HasTarget, Is.True);
+            Assert.That(
+                brain.CurrentDecision.State,
+                Is.EqualTo(NpcBehaviourState.Chase));
+        }
+
+        [Test]
         public void Brain_RuntimeProvidersUsePriorityAndCanBeReplaced()
         {
             BudgetedTickScheduler scheduler = new();
@@ -565,6 +601,34 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 Vector3.Dot(npc.transform.forward, Vector3.forward),
                 Is.GreaterThan(0.99f));
+        }
+
+        [Test]
+        public void Facing_DestroyedRigNeverRestoresItsBaseToEntityRoot()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Destroyed Rig NPC");
+            npc.SetActive(false);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
+            GameObject yawObject = CreateObject("Disposable NPC Yaw Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            yawObject.transform.localRotation = Quaternion.Euler(10f, 20f, 30f);
+            facing.SetYawRoot(yawObject.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            npc.SetActive(true);
+
+            UnityEngine.Object.DestroyImmediate(yawObject);
+            Quaternion gameplayRotation = Quaternion.Euler(0f, 135f, 0f);
+            npc.transform.rotation = gameplayRotation;
+            commands.SetSimulationEnabled(false);
+
+            Assert.That(
+                Quaternion.Angle(npc.transform.rotation, gameplayRotation),
+                Is.LessThan(0.01f));
         }
 
         [Test]
