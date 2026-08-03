@@ -151,9 +151,12 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   world direction even if a remote proxy loses an earlier orientation update or uses a rotated
   local movement reference. Attach the optional `NpcFacingFeature` to rotate a configured yaw
   root toward each absolute movement snapshot; the next received snapshot repairs visual facing
-  after packet loss without coupling movement correctness to consumer order. Facing composes yaw
-  over the root's captured local base rotation, restores that base on pooling/authority/scheduler
-  resets, and supports an optional turn-speed limit (`0` keeps immediate deterministic snapping).
+  after packet loss without coupling movement correctness to consumer order. With an explicitly
+  assigned child yaw root, facing composes yaw over the captured authored local base rotation and
+  restores that base on pooling/authority/scheduler resets. The default entity-root fallback uses
+  absolute yaw and leaves reset/spawn rotation ownership to gameplay or the spawner, preventing
+  activation from overwriting a pooled instance's new spawn rotation. An optional turn-speed
+  limit is supported (`0` keeps immediate deterministic snapping).
 - World-space decision movement is sanitized and transported without managed allocation.
   Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
   remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
@@ -189,10 +192,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
 | EditMode | 28 passed, 0 failed | 0.199 s test duration |
-| PlayMode | 70 passed, 0 failed | 1.491 s test duration |
+| PlayMode | 71 passed, 0 failed | 1.511 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 44.346 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 96.996 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 52.989 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 102.948 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

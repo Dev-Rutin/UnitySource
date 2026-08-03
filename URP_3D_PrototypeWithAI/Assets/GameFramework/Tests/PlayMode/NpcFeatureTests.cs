@@ -526,6 +526,48 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void Facing_EntityRootPreservesSpawnRotationAndUsesAbsoluteYaw()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Entity Root Facing NPC");
+            npc.SetActive(false);
+            npc.transform.rotation = Quaternion.Euler(0f, 45f, 0f);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            npc.AddComponent<NpcFacingFeature>();
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            npc.SetActive(true);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.up, sequence: 1)),
+                Is.True);
+            scheduler.Tick(0.016f, 0d);
+            Assert.That(
+                Vector3.Dot(npc.transform.forward, Vector3.forward),
+                Is.GreaterThan(0.99f));
+
+            npc.SetActive(false);
+            Quaternion spawnRotation = Quaternion.Euler(0f, 135f, 0f);
+            npc.transform.rotation = spawnRotation;
+            npc.SetActive(true);
+
+            Assert.That(
+                Quaternion.Angle(npc.transform.rotation, spawnRotation),
+                Is.LessThan(0.01f));
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.up, sequence: 2)),
+                Is.True);
+            scheduler.Tick(0.016f, 0.016d);
+            Assert.That(
+                Vector3.Dot(npc.transform.forward, Vector3.forward),
+                Is.GreaterThan(0.99f));
+        }
+
+        [Test]
         public void ThousandNpcBrains_AreFairAllocationFreeAndWithinBudget()
         {
             const int Population = 1000;

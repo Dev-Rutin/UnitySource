@@ -68,8 +68,11 @@ namespace Rutin.GameFramework.Npc
             float yawDegrees = Mathf.Atan2(
                 localForward.x,
                 localForward.z) * Mathf.Rad2Deg;
-            Quaternion targetRotation = _baseYawRotation *
+            Quaternion absoluteYaw =
                 Quaternion.AngleAxis(yawDegrees, Vector3.up);
+            Quaternion targetRotation = UsesEntityRoot
+                ? absoluteYaw
+                : _baseYawRotation * absoluteYaw;
             float turnSpeed = SanitizeNonNegative(turnSpeedDegreesPerSecond);
             activeYawRoot.localRotation = turnSpeed <= 0f
                 ? targetRotation
@@ -101,7 +104,8 @@ namespace Rutin.GameFramework.Npc
 
         private void CaptureBaseRotation()
         {
-            if (!IsFeatureInitialized)
+            _hasCapturedBaseRotation = false;
+            if (!IsFeatureInitialized || UsesEntityRoot)
             {
                 return;
             }
@@ -119,6 +123,9 @@ namespace Rutin.GameFramework.Npc
 
             YawRoot.localRotation = _baseYawRotation;
         }
+
+        private bool UsesEntityRoot =>
+            yawRoot == null || ReferenceEquals(yawRoot, transform);
 
         private static float SanitizeNonNegative(float value)
         {
