@@ -114,6 +114,33 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   Lazily initialize any callback dependency that would otherwise be cached only in `Awake`.
 - Call `PooledInstance.RefreshCallbacks()` only after changing a pooled hierarchy at runtime.
 
+## NPC
+
+- Build an NPC from `GameplayEntity`, `PlayerCommandFeature`, and `NpcBrainFeature`. Add
+  `PlayerCharacterMotorFeature` (and its required `CharacterController`) when the NPC uses the
+  shared character locomotion pipeline.
+- `NpcBrainFeature` is an `IPlayerCommandSource`, not another scheduled tickable. The sibling
+  `PlayerCommandFeature` remains the NPC stack's only central-scheduler registration, so sensing,
+  decisions, and command consumers are visited atomically under a frame budget.
+- Derive sensors from `NpcSensorFeature` and policies from `NpcDecisionProviderFeature`, or
+  register lightweight `INpcSensor` / `INpcDecisionProvider` implementations at runtime. Both
+  contracts are ordered; the first decision provider returning `true` wins. Active feature
+  components automatically register and unregister as they are attached, disabled, or removed.
+- `TransformTargetSensorFeature` consumes a target assigned by gameplay or interest management
+  without scene or physics scans. `IdlePatrolChaseDecisionFeature` is the basic idle/patrol/chase
+  example and can be replaced by more specialized policies.
+- The value-type `NpcBlackboard` clears perception before every sensing pass. Pooling,
+  deactivation, command ownership changes, simulation suspension, and scheduler replacement also
+  reset decision state and buffered jump edges, preventing stale targets or commands from leaking
+  into a new authority session.
+- `decisionIntervalSeconds` reduces expensive decision frequency while movement commands remain
+  held between decisions. The default negative initial delay deterministically staggers the first
+  decision over that interval; call `ConfigureDecisionCadence(interval, 0)` only when immediate,
+  synchronized evaluation is required.
+- World-space decision movement is sanitized and converted to the configured movement space with
+  no managed allocation. Network/server sensors can populate the blackboard directly and do not
+  depend on the Unity Input System.
+
 ## Performance test
 
 `FrameworkStressBenchmark` can be attached to a benchmark scene. The default profile:
@@ -130,20 +157,23 @@ CI or local hardware can override its thresholds:
 - `RUTIN_POOL_STRESS_OBJECTS`
 - `RUTIN_POOL_STRESS_BUDGET_MS`
 - `RUTIN_POOL_STRESS_ALLOC_BYTES`
+- `RUTIN_NPC_STRESS_BUDGET_MS` (default: 250 ms for 10,000 decision/command ticks across
+  1,000 NPCs)
 
 The first activation of a newly instantiated Unity object is intentionally excluded from the
 steady-state measurement. Production scenes should prewarm expected populations during loading.
 
 ### Verified baseline
 
-Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
+Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 27 passed, 0 failed | 0.312 s test duration |
-| PlayMode | 42 passed, 0 failed | 1.111 s test duration |
+| EditMode | 28 passed, 0 failed | 0.223 s test duration |
+| PlayMode | 62 passed, 0 failed | 1.506 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 58.735 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 94.620 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

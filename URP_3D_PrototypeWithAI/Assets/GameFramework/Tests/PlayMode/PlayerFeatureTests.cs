@@ -954,16 +954,6 @@ namespace Rutin.GameFramework.Tests.PlayMode
             PlayerCharacterMotorFeature singleBatchMotor =
                 singleBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
 
-            BudgetedTickScheduler splitBatchScheduler = new();
-            GameObject splitBatchPlayer = CreateMotorPlayer(
-                splitBatchScheduler,
-                "Timed Split Batch Player",
-                out _,
-                out Transform splitBatchTransform);
-            splitBatchTransform.position = Vector3.right * 10f;
-            PlayerCharacterMotorFeature splitBatchMotor =
-                splitBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
-
             PlayerCommand singleBatchCommand = new(
                 Vector2.up,
                 Vector2.zero,
@@ -980,6 +970,20 @@ namespace Rutin.GameFramework.Tests.PlayMode
                     simulationDeltaTimeSeconds: 0f),
                 0f);
 
+            Vector3 singleBatchPosition = singleBatchTransform.position;
+            double singleBatchDiscardedTime =
+                singleBatchMotor.TotalDiscardedSimulationTimeSeconds;
+            UnityEngine.Object.DestroyImmediate(singleBatchPlayer);
+
+            BudgetedTickScheduler splitBatchScheduler = new();
+            GameObject splitBatchPlayer = CreateMotorPlayer(
+                splitBatchScheduler,
+                "Timed Split Batch Player",
+                out _,
+                out Transform splitBatchTransform);
+            PlayerCharacterMotorFeature splitBatchMotor =
+                splitBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+
             for (uint sequence = 1; sequence <= 2; sequence++)
             {
                 splitBatchMotor.ProcessPlayerCommand(
@@ -993,17 +997,17 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
 
             Assert.That(
-                singleBatchMotor.TotalDiscardedSimulationTimeSeconds,
+                singleBatchDiscardedTime,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitBatchMotor.TotalDiscardedSimulationTimeSeconds,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitBatchTransform.position.z,
-                Is.EqualTo(singleBatchTransform.position.z).Within(0.0001f));
+                Is.EqualTo(singleBatchPosition.z).Within(0.0001f));
             Assert.That(
                 splitBatchTransform.position.y,
-                Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+                Is.EqualTo(singleBatchPosition.y).Within(0.0001f));
         }
 
         [Test]
@@ -1058,20 +1062,6 @@ namespace Rutin.GameFramework.Tests.PlayMode
             singleDispatchCommands.SetLocallyControlled(false);
             singleDispatchCommands.SetRemoteCommandTimeout(0f);
 
-            BudgetedTickScheduler splitDispatchScheduler = new();
-            GameObject splitDispatchPlayer = CreateMotorPlayer(
-                splitDispatchScheduler,
-                "Remote Split Dispatch Player",
-                out _,
-                out Transform splitDispatchTransform);
-            splitDispatchTransform.position = Vector3.right * 10f;
-            PlayerCommandFeature splitDispatchCommands =
-                splitDispatchPlayer.GetComponent<PlayerCommandFeature>();
-            PlayerCharacterMotorFeature splitDispatchMotor =
-                splitDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
-            splitDispatchCommands.SetLocallyControlled(false);
-            splitDispatchCommands.SetRemoteCommandTimeout(0f);
-
             Assert.That(
                 singleDispatchCommands.SubmitCommand(
                     new PlayerCommand(
@@ -1095,6 +1085,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
             {
                 singleDispatchScheduler.Tick(0f, 0d);
             }
+
+            Vector3 singleDispatchPosition = singleDispatchTransform.position;
+            double singleDispatchDiscardedTime =
+                singleDispatchMotor.TotalDiscardedSimulationTimeSeconds;
+            UnityEngine.Object.DestroyImmediate(singleDispatchPlayer);
+
+            BudgetedTickScheduler splitDispatchScheduler = new();
+            GameObject splitDispatchPlayer = CreateMotorPlayer(
+                splitDispatchScheduler,
+                "Remote Split Dispatch Player",
+                out _,
+                out Transform splitDispatchTransform);
+            PlayerCommandFeature splitDispatchCommands =
+                splitDispatchPlayer.GetComponent<PlayerCommandFeature>();
+            PlayerCharacterMotorFeature splitDispatchMotor =
+                splitDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+            splitDispatchCommands.SetLocallyControlled(false);
+            splitDispatchCommands.SetRemoteCommandTimeout(0f);
 
             Assert.That(
                 splitDispatchCommands.SubmitCommand(
@@ -1122,17 +1130,17 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
 
             Assert.That(
-                singleDispatchMotor.TotalDiscardedSimulationTimeSeconds,
+                singleDispatchDiscardedTime,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitDispatchMotor.TotalDiscardedSimulationTimeSeconds,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitDispatchTransform.position.z,
-                Is.EqualTo(singleDispatchTransform.position.z).Within(0.0001f));
+                Is.EqualTo(singleDispatchPosition.z).Within(0.0001f));
             Assert.That(
                 splitDispatchTransform.position.y,
-                Is.EqualTo(singleDispatchTransform.position.y).Within(0.0001f));
+                Is.EqualTo(singleDispatchPosition.y).Within(0.0001f));
         }
 
         [Test]

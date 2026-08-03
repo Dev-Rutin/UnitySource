@@ -59,6 +59,8 @@ namespace Rutin.GameFramework.Player
 
         public float RemoteCommandTimeout => remoteCommandTimeout;
 
+        public IPlayerCommandSource CommandSource => _source;
+
         public PlayerCommand CurrentCommand =>
             new(
                 _moveState,
