@@ -81,6 +81,20 @@ namespace Rutin.GameFramework.Player
 
         public void ResetPlayerCommandState()
         {
+            float safeYaw = IsFinite(_yaw)
+                ? Mathf.Repeat(_yaw, 360f)
+                : 0f;
+            float safePitch = IsFinite(_pitch)
+                ? Mathf.Clamp(_pitch, minimumPitch, maximumPitch)
+                : 0f;
+            if (safeYaw == _yaw && safePitch == _pitch)
+            {
+                return;
+            }
+
+            _yaw = safeYaw;
+            _pitch = safePitch;
+            ApplyViewRotation();
         }
 
         protected override void OnFeatureInitialized()
@@ -140,6 +154,11 @@ namespace Rutin.GameFramework.Player
             {
                 motor.UpdateLookMovementSpace(MovementReference);
             }
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
     }
 }

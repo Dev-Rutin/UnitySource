@@ -51,8 +51,8 @@ namespace Rutin.GameFramework.Player
             float simulationDeltaTimeSeconds,
             bool hasSimulationDeltaTime)
         {
-            Move = Vector2.ClampMagnitude(move, 1f);
-            Look = look;
+            Move = SanitizeMove(move);
+            Look = SanitizeLook(look);
             JumpPressed = jumpPressed;
             Sequence = sequence;
             HasSimulationDeltaTime = hasSimulationDeltaTime;
@@ -75,14 +75,35 @@ namespace Rutin.GameFramework.Player
 
         public static PlayerCommand Neutral => default;
 
+        private static Vector2 SanitizeMove(Vector2 value)
+        {
+            return Vector2.ClampMagnitude(
+                new Vector2(
+                    SanitizeFinite(value.x),
+                    SanitizeFinite(value.y)),
+                1f);
+        }
+
+        private static Vector2 SanitizeLook(Vector2 value)
+        {
+            float yawDelta = SanitizeFinite(value.x) % 360f;
+            float pitchDelta = Mathf.Clamp(
+                SanitizeFinite(value.y),
+                -180f,
+                180f);
+            return new Vector2(yawDelta, pitchDelta);
+        }
+
         private static float SanitizeSimulationDeltaTime(float seconds)
         {
-            if (float.IsNaN(seconds) || float.IsInfinity(seconds))
-            {
-                return 0f;
-            }
+            return Mathf.Max(0f, SanitizeFinite(seconds));
+        }
 
-            return Mathf.Max(0f, seconds);
+        private static float SanitizeFinite(float value)
+        {
+            return float.IsNaN(value) || float.IsInfinity(value)
+                ? 0f
+                : value;
         }
     }
 

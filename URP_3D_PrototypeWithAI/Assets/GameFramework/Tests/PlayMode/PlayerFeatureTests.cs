@@ -837,6 +837,59 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void PlayerCommand_SanitizesUntrustedMoveAndLookComponents()
+        {
+            PlayerCommand invalid = new(
+                new Vector2(float.NaN, float.PositiveInfinity),
+                new Vector2(float.NegativeInfinity, float.NaN),
+                false);
+            PlayerCommand bounded = new(
+                new Vector2(2f, 0f),
+                new Vector2(1000f, -1000f),
+                false);
+
+            Assert.That(invalid.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(invalid.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(bounded.Move, Is.EqualTo(Vector2.right));
+            Assert.That(bounded.Look.x, Is.EqualTo(280f).Within(0.0001f));
+            Assert.That(bounded.Look.y, Is.EqualTo(-180f));
+        }
+
+        [Test]
+        public void LookFeature_ResetRepairsNonFiniteViewState()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateInactiveObject("Recovering Look Player");
+            player.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands = player.AddComponent<PlayerCommandFeature>();
+            PlayerLookFeature look = player.AddComponent<PlayerLookFeature>();
+            commands.SetTickScheduler(scheduler);
+            player.SetActive(true);
+
+            const System.Reflection.BindingFlags PrivateInstance =
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo yawField =
+                typeof(PlayerLookFeature).GetField("_yaw", PrivateInstance);
+            System.Reflection.FieldInfo pitchField =
+                typeof(PlayerLookFeature).GetField("_pitch", PrivateInstance);
+            Assert.That(yawField, Is.Not.Null);
+            Assert.That(pitchField, Is.Not.Null);
+            yawField.SetValue(look, float.NaN);
+            pitchField.SetValue(look, float.PositiveInfinity);
+
+            look.ResetPlayerCommandState();
+
+            Assert.That(look.Yaw, Is.Zero);
+            Assert.That(look.Pitch, Is.Zero);
+            Assert.That(
+                Quaternion.Angle(
+                    player.transform.localRotation,
+                    Quaternion.identity),
+                Is.LessThan(0.001f));
+        }
+
+        [Test]
         public void Motor_ReportsInternallyDiscardedSimulationTime()
         {
             BudgetedTickScheduler scheduler = new();
