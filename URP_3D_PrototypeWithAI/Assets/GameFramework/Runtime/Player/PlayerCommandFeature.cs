@@ -34,6 +34,9 @@ namespace Rutin.GameFramework.Player
         private readonly List<IPlayerCommandConsumer> _resetSnapshot = new(4);
         private IPlayerCommandSource _source;
         private Vector2 _moveState;
+        private PlayerCommandMoveSpace _moveSpaceState;
+        private Vector2 _worldFacingState;
+        private bool _hasWorldFacingState;
         private Vector2 _pendingLook;
         private bool _pendingJump;
         private bool _hasRemoteCommand;
@@ -59,6 +62,8 @@ namespace Rutin.GameFramework.Player
 
         public float RemoteCommandTimeout => remoteCommandTimeout;
 
+        public IPlayerCommandSource CommandSource => _source;
+
         public PlayerCommand CurrentCommand =>
             new(
                 _moveState,
@@ -66,7 +71,10 @@ namespace Rutin.GameFramework.Player
                 _pendingJump,
                 _currentSequence,
                 _pendingSimulationDeltaTimeSeconds,
-                _usesCommandSimulationTime);
+                _usesCommandSimulationTime,
+                _moveSpaceState,
+                _worldFacingState,
+                _hasWorldFacingState);
 
         public void SetCommandSource(IPlayerCommandSource source)
         {
@@ -319,6 +327,9 @@ namespace Rutin.GameFramework.Player
         private void AcceptCommand(PlayerCommand command)
         {
             _moveState = command.Move;
+            _moveSpaceState = command.MoveSpace;
+            _worldFacingState = command.WorldFacing;
+            _hasWorldFacingState = command.HasWorldFacing;
             _pendingLook += command.Look;
             _pendingJump |= command.JumpPressed;
             _currentSequence = command.Sequence;
@@ -343,7 +354,10 @@ namespace Rutin.GameFramework.Player
                 _pendingJump,
                 _currentSequence,
                 _pendingSimulationDeltaTimeSeconds,
-                _usesCommandSimulationTime);
+                _usesCommandSimulationTime,
+                _moveSpaceState,
+                _worldFacingState,
+                _hasWorldFacingState);
             float simulationDeltaTime =
                 command.HasSimulationDeltaTime
                     ? command.SimulationDeltaTimeSeconds
@@ -451,6 +465,9 @@ namespace Rutin.GameFramework.Player
             DiscardSourceBuffer();
 
             _moveState = Vector2.zero;
+            _moveSpaceState = PlayerCommandMoveSpace.Relative;
+            _worldFacingState = Vector2.zero;
+            _hasWorldFacingState = false;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
             _hasRemoteCommand = false;
@@ -477,6 +494,9 @@ namespace Rutin.GameFramework.Player
         private void ClearPendingInput()
         {
             _moveState = Vector2.zero;
+            _moveSpaceState = PlayerCommandMoveSpace.Relative;
+            _worldFacingState = Vector2.zero;
+            _hasWorldFacingState = false;
             _pendingLook = Vector2.zero;
             _pendingJump = false;
             _hasPendingCommandForDispatch = false;

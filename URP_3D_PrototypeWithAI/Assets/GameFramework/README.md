@@ -58,14 +58,22 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   configured command timeout while gravity and other neutral simulation continue. Commands
   submitted while the feature is inactive or locally controlled are rejected instead of
   accumulating stale edges or mixing remote input into the local command stream.
+- `PlayerCommand.MoveSpace` defines how every movement consumer interprets `Move`: `Relative`
+  uses x as right/strafe and y as forward in the stack's movement reference, while `World` uses
+  x as world X and y as world Z. Custom animation, prediction, and correction consumers must
+  branch on this value. Call `GetWorldMoveDirection(relativeSpace)` to resolve either form to one
+  allocation-free world-space vector instead of duplicating the conversion.
 - Replay/server commands can set `SimulationDeltaTimeSeconds` to enter command-owned time mode.
   Explicit durations received before one dispatch are accumulated; empty dispatches then advance
   zero simulation time instead of mixing in the scheduler visit delta. Commands constructed
   without the duration retain live-input timing. Preserve fixed-step settings, initial state,
   collision world, and command order for deterministic replay. Use an `IPlayerCommandSource` when
   every recorded movement transition must be consumed in a separate scheduler dispatch. Network
-  serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
-  use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
+  serialization must round-trip `MoveSpace`, `WorldFacing`, `HasWorldFacing`,
+  `HasSimulationDeltaTime`, and `SimulationDeltaTimeSeconds`; use the full nine-argument
+  `PlayerCommand` constructor when reconstructing a transported command. Commands created through
+  the shorter constructors use relative movement and no independent facing intent for
+  backward-compatible local-player behavior.
   The payload normalizes non-finite move/look components and non-finite or negative durations to
   zero. Yaw deltas are reduced modulo one turn and pitch deltas are saturated to one half-turn,
   preventing a malformed packet from poisoning transforms. Finite duration budgets are enforced
@@ -114,6 +122,59 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   Lazily initialize any callback dependency that would otherwise be cached only in `Awake`.
 - Call `PooledInstance.RefreshCallbacks()` only after changing a pooled hierarchy at runtime.
 
+## NPC
+
+- Build an NPC from `GameplayEntity`, `PlayerCommandFeature`, and `NpcBrainFeature`. Add
+  `PlayerCharacterMotorFeature` (and its required `CharacterController`) when the NPC uses the
+  shared character locomotion pipeline.
+- `NpcBrainFeature` is an `IPlayerCommandSource`, not another scheduled tickable. The sibling
+  `PlayerCommandFeature` remains the NPC stack's only central-scheduler registration, so sensing,
+  decisions, and command consumers are visited atomically under a frame budget.
+- Derive sensors from `NpcSensorFeature` and policies from `NpcDecisionProviderFeature`, or
+  register lightweight `INpcSensor` / `INpcDecisionProvider` implementations at runtime. Both
+  contracts are ordered; the first decision provider returning `true` wins. Active feature
+  components automatically register and unregister as they are attached, disabled, or removed.
+- `TransformTargetSensorFeature` consumes a target assigned by gameplay or interest management
+  without scene or physics scans. A detection radius of zero explicitly disables acquisition;
+  use a positive finite radius to enable it. `IdlePatrolChaseDecisionFeature` is the basic
+  idle/patrol/chase example and can be replaced by more specialized policies.
+- The value-type `NpcBlackboard` clears perception before every sensing pass. Pooling,
+  deactivation, command ownership changes, simulation suspension, and scheduler replacement also
+  reset decision state and buffered jump edges, preventing stale targets or commands from leaking
+  into a new authority session. Repeated ticks while decision input is unavailable are idempotent
+  and do not rescan/reset every registered participant.
+- `decisionIntervalSeconds` reduces expensive decision frequency while movement commands remain
+  held between decisions. The default negative initial delay staggers the first decision over that
+  interval. Its fallback instance-ID seed is stable only within the running process; call
+  `SetStaggerSeed` with a stable spawn/network identifier for replay, migration, or cross-process
+  repeatability. Call `ConfigureDecisionCadence(interval, 0)` only when immediate, synchronized
+  evaluation is required.
+- NPC decisions emit absolute `World` movement commands. The motor therefore follows the same
+  world direction even if a remote proxy loses an earlier orientation update or uses a rotated
+  local movement reference. Attach the optional `NpcFacingFeature` to rotate a configured yaw
+  root toward each absolute movement snapshot; the next received snapshot repairs visual facing
+  after packet loss without coupling movement correctness to consumer order. With an explicitly
+  assigned child yaw root, facing replaces the captured base heading while preserving its
+  pitch/roll offset, and restores the complete authored base rotation on
+  pooling/authority/scheduler resets. The default entity-root fallback uses
+  absolute yaw and leaves reset/spawn rotation ownership to gameplay or the spawner, preventing
+  activation from overwriting a pooled instance's new spawn rotation. An optional turn-speed
+  limit is supported (`0` keeps immediate deterministic snapping).
+- `NpcDecision.WorldFacing` carries optional absolute facing independently of movement. Existing
+  movement decisions automatically face their move direction, while chase policies retain target
+  facing inside the stop radius even when `WorldMove` is zero. Replicated commands preserve this
+  intent through `PlayerCommand.WorldFacing` / `HasWorldFacing`.
+- World-space decision movement is sanitized and transported without managed allocation.
+  Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
+  remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
+  Brain command sequences remain monotonic across decision, authority, scheduler, activation, and
+  pooling resets so a proxy does not reject a restarted sequence as stale.
+  Network/server sensor components populate the blackboard through the
+  `INpcSensor.Sense(ref NpcBlackboard, ...)` parameter and do not depend on the Unity Input
+  System. External observers use the read-only `NpcBrainFeature` perception properties such as
+  `HasTarget`, `TargetPosition`, and `TargetDistanceSquared`; the mutable blackboard is never
+  exposed as an observation API.
+
 ## Performance test
 
 `FrameworkStressBenchmark` can be attached to a benchmark scene. The default profile:
@@ -130,21 +191,28 @@ CI or local hardware can override its thresholds:
 - `RUTIN_POOL_STRESS_OBJECTS`
 - `RUTIN_POOL_STRESS_BUDGET_MS`
 - `RUTIN_POOL_STRESS_ALLOC_BYTES`
+- `RUTIN_NPC_STRESS_BUDGET_MS` (default: 250 ms for 10,000 decision/command ticks across
+  1,000 NPCs)
 
 The first activation of a newly instantiated Unity object is intentionally excluded from the
 steady-state measurement. Production scenes should prewarm expected populations during loading.
 
 ### Verified baseline
 
-Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
+Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 27 passed, 0 failed | 0.312 s test duration |
-| PlayMode | 42 passed, 0 failed | 1.111 s test duration |
+| EditMode | 28 passed, 0 failed | 0.259 s test duration |
+| PlayMode | 75 passed, 0 failed | 1.452 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
+| 1,000 NPC brain/decision cores x 10 ticks | Passed | 48.419 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 95.369 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
 central `ITickScheduler` rather than activating the entire population in one frame.
+The 1,000-NPC figure isolates scheduler fairness plus brain, policy, and command-dispatch cost;
+it intentionally excludes project-specific sensors, `CharacterController`, collision, and motor
+cost. Profile the complete production prefab and collision world before choosing a concurrency
+target.

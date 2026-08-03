@@ -105,6 +105,39 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_PreservesWorldMoveSpaceThroughDispatch()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out ProbeCommandSource source,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                11,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World,
+                Vector2.right,
+                true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(
+                consumer.LastCommand.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(
+                commands.CurrentCommand.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.True);
+            Assert.That(consumer.LastCommand.WorldFacing, Is.EqualTo(Vector2.right));
+            Assert.That(commands.CurrentCommand.HasWorldFacing, Is.True);
+        }
+
+        [Test]
         public void CommandFeature_DispatchesConsumersInDeclaredOrder()
         {
             BudgetedTickScheduler scheduler = new();
@@ -245,13 +278,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 out ProbeCommandConsumer consumer);
             commands.SetLocallyControlled(false);
             commands.SubmitCommand(
-                new PlayerCommand(Vector2.up, Vector2.zero, false, 1));
+                new PlayerCommand(
+                    Vector2.up,
+                    Vector2.zero,
+                    false,
+                    1,
+                    0f,
+                    false,
+                    PlayerCommandMoveSpace.World,
+                    Vector2.right,
+                    true));
 
             scheduler.Tick(0.1f, 0d);
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.True);
 
             scheduler.Tick(0.2f, 0d);
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.False);
             Assert.That(consumer.CallCount, Is.EqualTo(2));
 
             scheduler.Tick(0.2f, 0d);
@@ -536,6 +580,35 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void Motor_WorldMoveIgnoresRotatedRelativeMovementSpace()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "World Move Motor Player",
+                out ProbeCommandSource source,
+                out _);
+            PlayerCharacterMotorFeature motor =
+                player.GetComponent<PlayerCharacterMotorFeature>();
+            GameObject movementReference = CreateObject("Rotated Movement Reference");
+            movementReference.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            motor.SetMovementSpace(movementReference.transform);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
+
+            scheduler.Tick(0.02f, 0d);
+
+            Assert.That(Mathf.Abs(motor.Velocity.x), Is.LessThan(0.0001f));
+            Assert.That(motor.Velocity.z, Is.GreaterThan(0f));
+        }
+
+        [Test]
         public void CommandFeature_UsesCommandSimulationDeltaForReplay()
         {
             BudgetedTickScheduler scheduler = new();
@@ -784,29 +857,76 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 live.JumpPressed,
                 live.Sequence,
                 live.SimulationDeltaTimeSeconds,
-                live.HasSimulationDeltaTime);
+                live.HasSimulationDeltaTime,
+                live.MoveSpace);
 
             Assert.That(restored.HasSimulationDeltaTime, Is.False);
             Assert.That(restored.SimulationDeltaTimeSeconds, Is.Zero);
+            Assert.That(restored.HasWorldFacing, Is.False);
+            Assert.That(
+                restored.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.Relative));
 
             PlayerCommand timed = new(
                 Vector2.down,
                 Vector2.zero,
                 false,
-                sequence: 8,
-                simulationDeltaTimeSeconds: 0.125f);
+                8,
+                0.125f,
+                true,
+                PlayerCommandMoveSpace.World,
+                Vector2.right,
+                true);
             PlayerCommand restoredTimed = new(
                 timed.Move,
                 timed.Look,
                 timed.JumpPressed,
                 timed.Sequence,
                 timed.SimulationDeltaTimeSeconds,
-                timed.HasSimulationDeltaTime);
+                timed.HasSimulationDeltaTime,
+                timed.MoveSpace,
+                timed.WorldFacing,
+                timed.HasWorldFacing);
 
             Assert.That(restoredTimed.HasSimulationDeltaTime, Is.True);
             Assert.That(
                 restoredTimed.SimulationDeltaTimeSeconds,
                 Is.EqualTo(0.125f));
+            Assert.That(
+                restoredTimed.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(restoredTimed.HasWorldFacing, Is.True);
+            Assert.That(restoredTimed.WorldFacing, Is.EqualTo(Vector2.right));
+        }
+
+        [Test]
+        public void PlayerCommand_WorldMoveHelperHonorsMoveSpace()
+        {
+            GameObject reference = CreateObject("Move Space Reference");
+            reference.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            PlayerCommand relative = new(
+                Vector2.up,
+                Vector2.zero,
+                false);
+            PlayerCommand world = new(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
+
+            Assert.That(
+                Vector3.Dot(
+                    relative.GetWorldMoveDirection(reference.transform),
+                    Vector3.right),
+                Is.GreaterThan(0.99f));
+            Assert.That(
+                Vector3.Dot(
+                    world.GetWorldMoveDirection(reference.transform),
+                    Vector3.forward),
+                Is.GreaterThan(0.99f));
         }
 
         [Test]
@@ -847,12 +967,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 new Vector2(2f, 0f),
                 new Vector2(1000f, -1000f),
                 false);
+            PlayerCommand invalidFacing = new(
+                Vector2.zero,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World,
+                new Vector2(float.NaN, float.PositiveInfinity),
+                true);
 
             Assert.That(invalid.Move, Is.EqualTo(Vector2.zero));
             Assert.That(invalid.Look, Is.EqualTo(Vector2.zero));
             Assert.That(bounded.Move, Is.EqualTo(Vector2.right));
             Assert.That(bounded.Look.x, Is.EqualTo(280f).Within(0.0001f));
             Assert.That(bounded.Look.y, Is.EqualTo(-180f));
+            Assert.That(invalidFacing.HasWorldFacing, Is.False);
+            Assert.That(invalidFacing.WorldFacing, Is.EqualTo(Vector2.zero));
         }
 
         [Test]
@@ -954,16 +1086,6 @@ namespace Rutin.GameFramework.Tests.PlayMode
             PlayerCharacterMotorFeature singleBatchMotor =
                 singleBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
 
-            BudgetedTickScheduler splitBatchScheduler = new();
-            GameObject splitBatchPlayer = CreateMotorPlayer(
-                splitBatchScheduler,
-                "Timed Split Batch Player",
-                out _,
-                out Transform splitBatchTransform);
-            splitBatchTransform.position = Vector3.right * 10f;
-            PlayerCharacterMotorFeature splitBatchMotor =
-                splitBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
-
             PlayerCommand singleBatchCommand = new(
                 Vector2.up,
                 Vector2.zero,
@@ -980,6 +1102,20 @@ namespace Rutin.GameFramework.Tests.PlayMode
                     simulationDeltaTimeSeconds: 0f),
                 0f);
 
+            Vector3 singleBatchPosition = singleBatchTransform.position;
+            double singleBatchDiscardedTime =
+                singleBatchMotor.TotalDiscardedSimulationTimeSeconds;
+            UnityEngine.Object.DestroyImmediate(singleBatchPlayer);
+
+            BudgetedTickScheduler splitBatchScheduler = new();
+            GameObject splitBatchPlayer = CreateMotorPlayer(
+                splitBatchScheduler,
+                "Timed Split Batch Player",
+                out _,
+                out Transform splitBatchTransform);
+            PlayerCharacterMotorFeature splitBatchMotor =
+                splitBatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+
             for (uint sequence = 1; sequence <= 2; sequence++)
             {
                 splitBatchMotor.ProcessPlayerCommand(
@@ -993,17 +1129,17 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
 
             Assert.That(
-                singleBatchMotor.TotalDiscardedSimulationTimeSeconds,
+                singleBatchDiscardedTime,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitBatchMotor.TotalDiscardedSimulationTimeSeconds,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitBatchTransform.position.z,
-                Is.EqualTo(singleBatchTransform.position.z).Within(0.0001f));
+                Is.EqualTo(singleBatchPosition.z).Within(0.0001f));
             Assert.That(
                 splitBatchTransform.position.y,
-                Is.EqualTo(singleBatchTransform.position.y).Within(0.0001f));
+                Is.EqualTo(singleBatchPosition.y).Within(0.0001f));
         }
 
         [Test]
@@ -1058,20 +1194,6 @@ namespace Rutin.GameFramework.Tests.PlayMode
             singleDispatchCommands.SetLocallyControlled(false);
             singleDispatchCommands.SetRemoteCommandTimeout(0f);
 
-            BudgetedTickScheduler splitDispatchScheduler = new();
-            GameObject splitDispatchPlayer = CreateMotorPlayer(
-                splitDispatchScheduler,
-                "Remote Split Dispatch Player",
-                out _,
-                out Transform splitDispatchTransform);
-            splitDispatchTransform.position = Vector3.right * 10f;
-            PlayerCommandFeature splitDispatchCommands =
-                splitDispatchPlayer.GetComponent<PlayerCommandFeature>();
-            PlayerCharacterMotorFeature splitDispatchMotor =
-                splitDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
-            splitDispatchCommands.SetLocallyControlled(false);
-            splitDispatchCommands.SetRemoteCommandTimeout(0f);
-
             Assert.That(
                 singleDispatchCommands.SubmitCommand(
                     new PlayerCommand(
@@ -1095,6 +1217,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
             {
                 singleDispatchScheduler.Tick(0f, 0d);
             }
+
+            Vector3 singleDispatchPosition = singleDispatchTransform.position;
+            double singleDispatchDiscardedTime =
+                singleDispatchMotor.TotalDiscardedSimulationTimeSeconds;
+            UnityEngine.Object.DestroyImmediate(singleDispatchPlayer);
+
+            BudgetedTickScheduler splitDispatchScheduler = new();
+            GameObject splitDispatchPlayer = CreateMotorPlayer(
+                splitDispatchScheduler,
+                "Remote Split Dispatch Player",
+                out _,
+                out Transform splitDispatchTransform);
+            PlayerCommandFeature splitDispatchCommands =
+                splitDispatchPlayer.GetComponent<PlayerCommandFeature>();
+            PlayerCharacterMotorFeature splitDispatchMotor =
+                splitDispatchPlayer.GetComponent<PlayerCharacterMotorFeature>();
+            splitDispatchCommands.SetLocallyControlled(false);
+            splitDispatchCommands.SetRemoteCommandTimeout(0f);
 
             Assert.That(
                 splitDispatchCommands.SubmitCommand(
@@ -1122,17 +1262,17 @@ namespace Rutin.GameFramework.Tests.PlayMode
             }
 
             Assert.That(
-                singleDispatchMotor.TotalDiscardedSimulationTimeSeconds,
+                singleDispatchDiscardedTime,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitDispatchMotor.TotalDiscardedSimulationTimeSeconds,
                 Is.Zero.Within(0.000001d));
             Assert.That(
                 splitDispatchTransform.position.z,
-                Is.EqualTo(singleDispatchTransform.position.z).Within(0.0001f));
+                Is.EqualTo(singleDispatchPosition.z).Within(0.0001f));
             Assert.That(
                 splitDispatchTransform.position.y,
-                Is.EqualTo(singleDispatchTransform.position.y).Within(0.0001f));
+                Is.EqualTo(singleDispatchPosition.y).Within(0.0001f));
         }
 
         [Test]

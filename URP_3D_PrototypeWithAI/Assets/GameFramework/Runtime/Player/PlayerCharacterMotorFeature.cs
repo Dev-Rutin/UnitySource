@@ -49,7 +49,7 @@ namespace Rutin.GameFramework.Player
 
         private CharacterController _controller;
         private PlayerCommandFeature _commands;
-        private Vector2 _desiredMove;
+        private Vector3 _desiredWorldMove;
         private Vector3 _horizontalVelocity;
         private float _verticalVelocity;
         private double _accumulatedTime;
@@ -122,7 +122,8 @@ namespace Rutin.GameFramework.Player
                 return;
             }
 
-            _desiredMove = command.Move;
+            _desiredWorldMove =
+                command.GetWorldMoveDirection(MovementSpace);
             if (command.JumpPressed)
             {
                 _jumpBufferRemaining = Mathf.Max(
@@ -207,8 +208,7 @@ namespace Rutin.GameFramework.Player
 
         private void SimulateStep(float step)
         {
-            Vector3 desiredDirection = GetMovementDirection(_desiredMove);
-            Vector3 desiredVelocity = desiredDirection * moveSpeed;
+            Vector3 desiredVelocity = _desiredWorldMove * moveSpeed;
             _horizontalVelocity = Vector3.MoveTowards(
                 _horizontalVelocity,
                 desiredVelocity,
@@ -241,39 +241,9 @@ namespace Rutin.GameFramework.Player
                 _jumpBufferRemaining - step);
         }
 
-        private Vector3 GetMovementDirection(Vector2 input)
-        {
-            Transform space = MovementSpace;
-            Vector3 forward = space.forward;
-            forward.y = 0f;
-            if (forward.sqrMagnitude > 0.0001f)
-            {
-                forward.Normalize();
-            }
-            else
-            {
-                forward = Vector3.forward;
-            }
-
-            Vector3 right = space.right;
-            right.y = 0f;
-            if (right.sqrMagnitude > 0.0001f)
-            {
-                right.Normalize();
-            }
-            else
-            {
-                right = Vector3.right;
-            }
-
-            return Vector3.ClampMagnitude(
-                right * input.x + forward * input.y,
-                1f);
-        }
-
         private void ResetMotion()
         {
-            _desiredMove = Vector2.zero;
+            _desiredWorldMove = Vector3.zero;
             _horizontalVelocity = Vector3.zero;
             _verticalVelocity = 0f;
             _accumulatedTime = 0f;
