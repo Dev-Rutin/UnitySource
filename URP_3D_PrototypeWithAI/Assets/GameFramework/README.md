@@ -169,8 +169,10 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
   Brain command sequences remain monotonic across decision, authority, scheduler, activation, and
   pooling resets so a proxy does not reject a restarted sequence as stale.
-  Network/server sensors can populate the blackboard directly and do not depend on the Unity
-  Input System.
+  Network/server sensor components populate the blackboard through the
+  `INpcSensor.Sense(ref NpcBlackboard, ...)` parameter and do not depend on the Unity Input
+  System. `NpcBrainFeature.Blackboard` is a live `ref readonly` observation view, not a mutation
+  entry point.
 
 ## Performance test
 
