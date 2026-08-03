@@ -14,8 +14,8 @@ namespace Rutin.GameFramework.Player
     /// SimulationDeltaTimeSeconds makes replay simulation independent of scheduler timing.
     /// Commands constructed without a duration use the dispatch tick delta for live input;
     /// an explicitly supplied zero-duration command advances no simulation time. Network
-    /// serializers must transport MoveSpace, HasSimulationDeltaTime, and
-    /// SimulationDeltaTimeSeconds.
+    /// serializers must transport MoveSpace, WorldFacing, HasWorldFacing,
+    /// HasSimulationDeltaTime, and SimulationDeltaTimeSeconds.
     /// </summary>
     public readonly struct PlayerCommand
     {
@@ -57,13 +57,22 @@ namespace Rutin.GameFramework.Player
             uint sequence,
             float simulationDeltaTimeSeconds,
             bool hasSimulationDeltaTime,
-            PlayerCommandMoveSpace moveSpace = PlayerCommandMoveSpace.Relative)
+            PlayerCommandMoveSpace moveSpace = PlayerCommandMoveSpace.Relative,
+            Vector2 worldFacing = default,
+            bool hasWorldFacing = false)
         {
             Move = SanitizeMove(move);
             Look = SanitizeLook(look);
             JumpPressed = jumpPressed;
             Sequence = sequence;
             MoveSpace = SanitizeMoveSpace(moveSpace);
+            Vector2 sanitizedWorldFacing =
+                SanitizeWorldFacing(worldFacing);
+            HasWorldFacing = hasWorldFacing &&
+                sanitizedWorldFacing.sqrMagnitude > 0f;
+            WorldFacing = HasWorldFacing
+                ? sanitizedWorldFacing
+                : Vector2.zero;
             HasSimulationDeltaTime = hasSimulationDeltaTime;
             SimulationDeltaTimeSeconds = hasSimulationDeltaTime
                 ? SanitizeSimulationDeltaTime(simulationDeltaTimeSeconds)
@@ -85,6 +94,14 @@ namespace Rutin.GameFramework.Player
         public uint Sequence { get; }
 
         public PlayerCommandMoveSpace MoveSpace { get; }
+
+        /// <summary>
+        /// Optional absolute world XZ facing direction, independent of movement. Network
+        /// serializers must transport this value together with HasWorldFacing.
+        /// </summary>
+        public Vector2 WorldFacing { get; }
+
+        public bool HasWorldFacing { get; }
 
         public bool HasSimulationDeltaTime { get; }
 
@@ -119,6 +136,13 @@ namespace Rutin.GameFramework.Player
                 1f);
         }
 
+        public Vector3 GetWorldFacingDirection()
+        {
+            return HasWorldFacing
+                ? new Vector3(WorldFacing.x, 0f, WorldFacing.y)
+                : Vector3.zero;
+        }
+
         private static Vector2 SanitizeMove(Vector2 value)
         {
             return Vector2.ClampMagnitude(
@@ -136,6 +160,16 @@ namespace Rutin.GameFramework.Player
                 -180f,
                 180f);
             return new Vector2(yawDelta, pitchDelta);
+        }
+
+        private static Vector2 SanitizeWorldFacing(Vector2 value)
+        {
+            Vector2 sanitized = new(
+                SanitizeFinite(value.x),
+                SanitizeFinite(value.y));
+            return sanitized.sqrMagnitude > 0.0001f
+                ? sanitized.normalized
+                : Vector2.zero;
         }
 
         private static float SanitizeSimulationDeltaTime(float seconds)

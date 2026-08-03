@@ -371,7 +371,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(brain.DecisionCount, Is.Zero);
             firstScheduler.Tick(0.016f, 0d);
             Assert.That(brain.CurrentDecision.State, Is.EqualTo(NpcBehaviourState.Idle));
-            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(1));
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(2));
 
             BudgetedTickScheduler replacementScheduler = new();
             commands.SetTickScheduler(replacementScheduler);
@@ -382,6 +382,32 @@ namespace Rutin.GameFramework.Tests.PlayMode
             replacementScheduler.Tick(0.016f, 0d);
             Assert.That(brain.DecisionCount, Is.EqualTo(1));
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.Sequence, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void Brain_CommandSequenceRemainsMonotonicAcrossDecisionReset()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateNpc(
+                scheduler,
+                "Monotonic Sequence NPC",
+                out NpcBrainFeature brain,
+                out _,
+                out ProbeCommandConsumer consumer);
+
+            scheduler.Tick(0.016f, 0d);
+            uint firstSequence = consumer.LastCommand.Sequence;
+            brain.SetDecisionEnabled(false);
+            brain.SetDecisionEnabled(true);
+            scheduler.Tick(0.016f, 0.016d);
+            uint secondSequence = consumer.LastCommand.Sequence;
+
+            Assert.That(firstSequence, Is.EqualTo(1));
+            Assert.That(secondSequence, Is.EqualTo(2));
+            Assert.That(
+                unchecked((int)(secondSequence - firstSequence)),
+                Is.GreaterThan(0));
         }
 
         [Test]
@@ -393,6 +419,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 true);
 
             Assert.That(malformed.WorldMove, Is.EqualTo(Vector3.zero));
+            Assert.That(malformed.HasWorldFacing, Is.False);
 
             BudgetedTickScheduler scheduler = new();
             CreateNpc(
@@ -479,6 +506,46 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 Is.GreaterThan(0.99f));
             Assert.That(Mathf.Abs(motor.Velocity.x), Is.LessThan(0.0001f));
             Assert.That(motor.Velocity.z, Is.GreaterThan(0f));
+        }
+
+        [Test]
+        public void Brain_StationaryChasePublishesIndependentFacingIntent()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Stationary Chase NPC");
+            npc.SetActive(false);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcBrainFeature brain = npc.AddComponent<NpcBrainFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
+            TransformTargetSensorFeature sensor =
+                npc.AddComponent<TransformTargetSensorFeature>();
+            npc.AddComponent<IdlePatrolChaseDecisionFeature>();
+            ProbeCommandConsumer consumer =
+                npc.AddComponent<ProbeCommandConsumer>();
+            GameObject yawObject = CreateObject("Stationary Chase Yaw Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            facing.SetYawRoot(yawObject.transform);
+            GameObject target = CreateObject("Nearby Moving Target");
+            target.transform.position = Vector3.right;
+            sensor.SetTarget(target.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.RegisterConsumer(consumer);
+            brain.ConfigureDecisionCadence(0f, 0f);
+            npc.SetActive(true);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(
+                brain.CurrentDecision.State,
+                Is.EqualTo(NpcBehaviourState.Chase));
+            Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.True);
+            Assert.That(consumer.LastCommand.WorldFacing, Is.EqualTo(Vector2.right));
+            Assert.That(
+                Vector3.Dot(yawObject.transform.forward, Vector3.right),
+                Is.GreaterThan(0.99f));
         }
 
         [Test]

@@ -69,10 +69,11 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   without the duration retain live-input timing. Preserve fixed-step settings, initial state,
   collision world, and command order for deterministic replay. Use an `IPlayerCommandSource` when
   every recorded movement transition must be consumed in a separate scheduler dispatch. Network
-  serialization must round-trip `MoveSpace`, `HasSimulationDeltaTime`, and
-  `SimulationDeltaTimeSeconds`; use the seven-argument `PlayerCommand` constructor when
-  reconstructing a transported command. Commands created through the shorter constructors use
-  relative movement for backward-compatible local-player behavior.
+  serialization must round-trip `MoveSpace`, `WorldFacing`, `HasWorldFacing`,
+  `HasSimulationDeltaTime`, and `SimulationDeltaTimeSeconds`; use the full nine-argument
+  `PlayerCommand` constructor when reconstructing a transported command. Commands created through
+  the shorter constructors use relative movement and no independent facing intent for
+  backward-compatible local-player behavior.
   The payload normalizes non-finite move/look components and non-finite or negative durations to
   zero. Yaw deltas are reduced modulo one turn and pitch deltas are saturated to one half-turn,
   preventing a malformed packet from poisoning transforms. Finite duration budgets are enforced
@@ -158,9 +159,15 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   absolute yaw and leaves reset/spawn rotation ownership to gameplay or the spawner, preventing
   activation from overwriting a pooled instance's new spawn rotation. An optional turn-speed
   limit is supported (`0` keeps immediate deterministic snapping).
+- `NpcDecision.WorldFacing` carries optional absolute facing independently of movement. Existing
+  movement decisions automatically face their move direction, while chase policies retain target
+  facing inside the stop radius even when `WorldMove` is zero. Replicated commands preserve this
+  intent through `PlayerCommand.WorldFacing` / `HasWorldFacing`.
 - World-space decision movement is sanitized and transported without managed allocation.
   Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
   remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
+  Brain command sequences remain monotonic across decision, authority, scheduler, activation, and
+  pooling resets so a proxy does not reject a restarted sequence as stale.
   Network/server sensors can populate the blackboard directly and do not depend on the Unity
   Input System.
 
@@ -192,11 +199,11 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 28 passed, 0 failed | 0.199 s test duration |
-| PlayMode | 73 passed, 0 failed | 1.811 s test duration |
+| EditMode | 28 passed, 0 failed | 0.259 s test duration |
+| PlayMode | 75 passed, 0 failed | 1.452 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 75.602 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 122.314 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 48.419 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 95.369 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

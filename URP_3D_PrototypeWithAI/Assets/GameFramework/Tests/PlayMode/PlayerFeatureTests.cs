@@ -120,7 +120,9 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 11,
                 0f,
                 false,
-                PlayerCommandMoveSpace.World);
+                PlayerCommandMoveSpace.World,
+                Vector2.right,
+                true);
 
             scheduler.Tick(0.016f, 0d);
 
@@ -130,6 +132,9 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 commands.CurrentCommand.MoveSpace,
                 Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.True);
+            Assert.That(consumer.LastCommand.WorldFacing, Is.EqualTo(Vector2.right));
+            Assert.That(commands.CurrentCommand.HasWorldFacing, Is.True);
         }
 
         [Test]
@@ -273,13 +278,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 out ProbeCommandConsumer consumer);
             commands.SetLocallyControlled(false);
             commands.SubmitCommand(
-                new PlayerCommand(Vector2.up, Vector2.zero, false, 1));
+                new PlayerCommand(
+                    Vector2.up,
+                    Vector2.zero,
+                    false,
+                    1,
+                    0f,
+                    false,
+                    PlayerCommandMoveSpace.World,
+                    Vector2.right,
+                    true));
 
             scheduler.Tick(0.1f, 0d);
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.up));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.True);
 
             scheduler.Tick(0.2f, 0d);
             Assert.That(consumer.LastCommand.Move, Is.EqualTo(Vector2.zero));
+            Assert.That(consumer.LastCommand.HasWorldFacing, Is.False);
             Assert.That(consumer.CallCount, Is.EqualTo(2));
 
             scheduler.Tick(0.2f, 0d);
@@ -846,6 +862,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             Assert.That(restored.HasSimulationDeltaTime, Is.False);
             Assert.That(restored.SimulationDeltaTimeSeconds, Is.Zero);
+            Assert.That(restored.HasWorldFacing, Is.False);
             Assert.That(
                 restored.MoveSpace,
                 Is.EqualTo(PlayerCommandMoveSpace.Relative));
@@ -857,7 +874,9 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 8,
                 0.125f,
                 true,
-                PlayerCommandMoveSpace.World);
+                PlayerCommandMoveSpace.World,
+                Vector2.right,
+                true);
             PlayerCommand restoredTimed = new(
                 timed.Move,
                 timed.Look,
@@ -865,7 +884,9 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 timed.Sequence,
                 timed.SimulationDeltaTimeSeconds,
                 timed.HasSimulationDeltaTime,
-                timed.MoveSpace);
+                timed.MoveSpace,
+                timed.WorldFacing,
+                timed.HasWorldFacing);
 
             Assert.That(restoredTimed.HasSimulationDeltaTime, Is.True);
             Assert.That(
@@ -874,6 +895,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 restoredTimed.MoveSpace,
                 Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(restoredTimed.HasWorldFacing, Is.True);
+            Assert.That(restoredTimed.WorldFacing, Is.EqualTo(Vector2.right));
         }
 
         [Test]
@@ -944,12 +967,24 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 new Vector2(2f, 0f),
                 new Vector2(1000f, -1000f),
                 false);
+            PlayerCommand invalidFacing = new(
+                Vector2.zero,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World,
+                new Vector2(float.NaN, float.PositiveInfinity),
+                true);
 
             Assert.That(invalid.Move, Is.EqualTo(Vector2.zero));
             Assert.That(invalid.Look, Is.EqualTo(Vector2.zero));
             Assert.That(bounded.Move, Is.EqualTo(Vector2.right));
             Assert.That(bounded.Look.x, Is.EqualTo(280f).Within(0.0001f));
             Assert.That(bounded.Look.y, Is.EqualTo(-180f));
+            Assert.That(invalidFacing.HasWorldFacing, Is.False);
+            Assert.That(invalidFacing.WorldFacing, Is.EqualTo(Vector2.zero));
         }
 
         [Test]

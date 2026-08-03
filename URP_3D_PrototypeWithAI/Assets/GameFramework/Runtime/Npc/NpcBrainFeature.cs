@@ -220,6 +220,7 @@ namespace Rutin.GameFramework.Npc
 
             Vector3 worldMove = _currentDecision.WorldMove;
             Vector2 move = new(worldMove.x, worldMove.z);
+            Vector3 worldFacing = _currentDecision.WorldFacing;
             bool jumpPressed = _pendingJump;
             _pendingJump = false;
             return new PlayerCommand(
@@ -229,7 +230,9 @@ namespace Rutin.GameFramework.Npc
                 NextCommandSequence(),
                 0f,
                 false,
-                PlayerCommandMoveSpace.World);
+                PlayerCommandMoveSpace.World,
+                new Vector2(worldFacing.x, worldFacing.z),
+                _currentDecision.HasWorldFacing);
         }
 
         public void DiscardBufferedInput()
@@ -417,7 +420,6 @@ namespace Rutin.GameFramework.Npc
                 _decisionElapsedSeconds = 0f;
                 _timeUntilNextDecisionSeconds = ResolveInitialDelay();
                 _pendingJump = false;
-                _commandSequence = 0;
                 _decisionCount = 0;
                 _runtimeStateClean = true;
             }

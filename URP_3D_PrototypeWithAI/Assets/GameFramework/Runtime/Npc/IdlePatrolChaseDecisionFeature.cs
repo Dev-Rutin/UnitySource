@@ -107,12 +107,17 @@ namespace Rutin.GameFramework.Npc
             if (offset.sqrMagnitude <=
                 sanitizedStopDistance * sanitizedStopDistance)
             {
-                return new NpcDecision(state, Vector3.zero);
+                return new NpcDecision(
+                    state,
+                    Vector3.zero,
+                    NormalizeDirection(offset));
             }
 
+            Vector3 facing = NormalizeDirection(offset);
             return new NpcDecision(
                 state,
-                offset.normalized * Mathf.Clamp01(moveAmount));
+                facing * Mathf.Clamp01(moveAmount),
+                facing);
         }
 
         private void AdvancePatrolIndex(int pointCount)
@@ -127,6 +132,13 @@ namespace Rutin.GameFramework.Npc
             return float.IsNaN(value) || float.IsInfinity(value)
                 ? 0f
                 : Mathf.Max(0f, value);
+        }
+
+        private static Vector3 NormalizeDirection(Vector3 value)
+        {
+            return value.sqrMagnitude > 0.0001f
+                ? value.normalized
+                : Vector3.zero;
         }
     }
 }

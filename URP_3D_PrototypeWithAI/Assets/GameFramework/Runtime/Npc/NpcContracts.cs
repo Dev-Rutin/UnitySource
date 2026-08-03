@@ -12,6 +12,7 @@ namespace Rutin.GameFramework.Npc
     /// <summary>
     /// Immutable result produced by an NPC decision provider. WorldMove is a planar,
     /// normalized intent that the brain transports as an absolute world-space command.
+    /// WorldFacing optionally remains meaningful when movement is zero.
     /// </summary>
     public readonly struct NpcDecision
     {
@@ -22,12 +23,32 @@ namespace Rutin.GameFramework.Npc
         {
             State = state;
             WorldMove = SanitizeDirection(worldMove);
+            WorldFacing = NormalizeDirection(WorldMove);
+            HasWorldFacing = WorldFacing.sqrMagnitude > 0f;
+            JumpPressed = jumpPressed;
+        }
+
+        public NpcDecision(
+            NpcBehaviourState state,
+            Vector3 worldMove,
+            Vector3 worldFacing,
+            bool jumpPressed = false)
+        {
+            State = state;
+            WorldMove = SanitizeDirection(worldMove);
+            WorldFacing = NormalizeDirection(
+                SanitizeDirection(worldFacing));
+            HasWorldFacing = WorldFacing.sqrMagnitude > 0f;
             JumpPressed = jumpPressed;
         }
 
         public NpcBehaviourState State { get; }
 
         public Vector3 WorldMove { get; }
+
+        public Vector3 WorldFacing { get; }
+
+        public bool HasWorldFacing { get; }
 
         public bool JumpPressed { get; }
 
@@ -39,6 +60,13 @@ namespace Rutin.GameFramework.Npc
             value.y = 0f;
             value.z = SanitizeFinite(value.z);
             return Vector3.ClampMagnitude(value, 1f);
+        }
+
+        private static Vector3 NormalizeDirection(Vector3 value)
+        {
+            return value.sqrMagnitude > 0.0001f
+                ? value.normalized
+                : Vector3.zero;
         }
 
         private static float SanitizeFinite(float value)

@@ -48,15 +48,21 @@ namespace Rutin.GameFramework.Npc
 
         public void ProcessPlayerCommand(PlayerCommand command, float deltaTime)
         {
-            if (!IsFeatureActive ||
-                command.MoveSpace != PlayerCommandMoveSpace.World ||
-                command.Move.sqrMagnitude <= 0.0001f)
+            if (!IsFeatureActive)
             {
                 return;
             }
 
             Transform activeYawRoot = YawRoot;
-            Vector3 worldForward = command.GetWorldMoveDirection(null);
+            Vector3 worldForward = command.HasWorldFacing
+                ? command.GetWorldFacingDirection()
+                : command.MoveSpace == PlayerCommandMoveSpace.World
+                    ? command.GetWorldMoveDirection(null)
+                    : Vector3.zero;
+            if (worldForward.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
             Vector3 localForward = activeYawRoot.parent != null
                 ? activeYawRoot.parent.InverseTransformDirection(worldForward)
                 : worldForward;
