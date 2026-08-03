@@ -16,11 +16,60 @@ namespace Rutin.GameFramework.Ticking
             int quarantinedCount,
             bool roundCompleted,
             double elapsedMilliseconds)
+            : this(
+                registeredCount,
+                visitedCount,
+                processedCount,
+                quarantinedCount,
+                0,
+                0d,
+                0d,
+                roundCompleted,
+                elapsedMilliseconds)
+        {
+        }
+
+        public TickBatchStats(
+            int registeredCount,
+            int visitedCount,
+            int processedCount,
+            int quarantinedCount,
+            int clampedTickCount,
+            double discardedDeltaTimeSeconds,
+            bool roundCompleted,
+            double elapsedMilliseconds)
+            : this(
+                registeredCount,
+                visitedCount,
+                processedCount,
+                quarantinedCount,
+                clampedTickCount,
+                discardedDeltaTimeSeconds,
+                discardedDeltaTimeSeconds,
+                roundCompleted,
+                elapsedMilliseconds)
+        {
+        }
+
+        public TickBatchStats(
+            int registeredCount,
+            int visitedCount,
+            int processedCount,
+            int quarantinedCount,
+            int clampedTickCount,
+            double discardedDeltaTimeSeconds,
+            double maximumDiscardedDeltaTimeSeconds,
+            bool roundCompleted,
+            double elapsedMilliseconds)
         {
             RegisteredCount = registeredCount;
             VisitedCount = visitedCount;
             ProcessedCount = processedCount;
             QuarantinedCount = quarantinedCount;
+            ClampedTickCount = clampedTickCount;
+            DiscardedDeltaTimeSeconds = discardedDeltaTimeSeconds;
+            MaximumDiscardedDeltaTimeSeconds =
+                maximumDiscardedDeltaTimeSeconds;
             RoundCompleted = roundCompleted;
             ElapsedMilliseconds = elapsedMilliseconds;
         }
@@ -32,6 +81,19 @@ namespace Rutin.GameFramework.Ticking
         public int ProcessedCount { get; }
 
         public int QuarantinedCount { get; }
+
+        public int ClampedTickCount { get; }
+
+        /// <summary>
+        /// Aggregate simulation seconds discarded across all clamped tickables in this batch.
+        /// This is workload time and can exceed wall-clock time.
+        /// </summary>
+        public double DiscardedDeltaTimeSeconds { get; }
+
+        /// <summary>
+        /// Largest simulation-time discard reported by one tickable in this batch.
+        /// </summary>
+        public double MaximumDiscardedDeltaTimeSeconds { get; }
 
         public bool RoundCompleted { get; }
 
@@ -109,6 +171,13 @@ namespace Rutin.GameFramework.Ticking
 
         public bool Unregister(IGameTickable tickable)
         {
+            return Unregister(tickable, TickUnregistrationReason.Explicit);
+        }
+
+        private bool Unregister(
+            IGameTickable tickable,
+            TickUnregistrationReason reason)
+        {
             if (tickable == null || !_indices.TryGetValue(tickable, out int index))
             {
                 return false;
@@ -149,6 +218,11 @@ namespace Rutin.GameFramework.Ticking
                 _cursor = 0;
             }
 
+            if (tickable is ITickSchedulerRegistrationObserver observer)
+            {
+                NotifyUnregistered(observer, reason);
+            }
+
             return true;
         }
 
@@ -176,6 +250,8 @@ namespace Rutin.GameFramework.Ticking
                     0,
                     0,
                     0,
+                    0,
+                    0d,
                     registeredCount == 0,
                     0d);
             }
@@ -184,6 +260,9 @@ namespace Rutin.GameFramework.Ticking
             int visited = 0;
             int processed = 0;
             int quarantined = 0;
+            int clampedTickCount = 0;
+            double discardedDeltaTimeSeconds = 0d;
+            double maximumDiscardedDeltaTimeSeconds = 0d;
             bool roundCompleted = false;
             bool hasTimeBudget = timeBudgetMilliseconds > 0d;
             BeginRound(registeredCount);
@@ -257,11 +336,23 @@ namespace Rutin.GameFramework.Ticking
                     }
 
                     processed++;
+                    double deliveredDeltaTime = Math.Min(
+                        accumulatedDeltaTime,
+                        maxAccumulatedDeltaTime);
+                    double discardedDeltaTime =
+                        accumulatedDeltaTime - deliveredDeltaTime;
+                    if (discardedDeltaTime > 0d)
+                    {
+                        clampedTickCount++;
+                        discardedDeltaTimeSeconds += discardedDeltaTime;
+                        maximumDiscardedDeltaTimeSeconds = Math.Max(
+                            maximumDiscardedDeltaTimeSeconds,
+                            discardedDeltaTime);
+                    }
+
                     try
                     {
-                        tickable.Tick((float)Math.Min(
-                            accumulatedDeltaTime,
-                            maxAccumulatedDeltaTime));
+                        tickable.Tick((float)deliveredDeltaTime);
                         if (failuresBeforeVisit > 0)
                         {
                             ResetFailureCount(tickable);
@@ -295,12 +386,26 @@ namespace Rutin.GameFramework.Ticking
                 visited,
                 processed,
                 quarantined,
+                clampedTickCount,
+                discardedDeltaTimeSeconds,
+                maximumDiscardedDeltaTimeSeconds,
                 roundCompleted,
                 GetElapsedMilliseconds(startTimestamp));
         }
 
         public void Clear()
         {
+            ITickSchedulerRegistrationObserver[] observers =
+                new ITickSchedulerRegistrationObserver[_tickables.Count];
+            int observerCount = 0;
+            for (int i = 0; i < _tickables.Count; i++)
+            {
+                if (_tickables[i] is ITickSchedulerRegistrationObserver observer)
+                {
+                    observers[observerCount++] = observer;
+                }
+            }
+
             _tickables.Clear();
             _lastVisitedRounds.Clear();
             _lastTickTimes.Clear();
@@ -308,8 +413,17 @@ namespace Rutin.GameFramework.Ticking
             _hasLoggedFailure.Clear();
             _indices.Clear();
             _cursor = 0;
+            _currentRound = 0;
             _remainingInRound = 0;
+            _isTicking = false;
             _elapsedTime = 0d;
+
+            for (int i = 0; i < observerCount; i++)
+            {
+                NotifyUnregistered(
+                    observers[i],
+                    TickUnregistrationReason.SchedulerCleared);
+            }
         }
 
         private void BeginRound(int registeredCount)
@@ -333,6 +447,20 @@ namespace Rutin.GameFramework.Ticking
         {
             long elapsedTicks = Stopwatch.GetTimestamp() - startTimestamp;
             return elapsedTicks * 1000d / Stopwatch.Frequency;
+        }
+
+        private void NotifyUnregistered(
+            ITickSchedulerRegistrationObserver observer,
+            TickUnregistrationReason reason)
+        {
+            try
+            {
+                observer.OnTickSchedulerUnregistered(this, reason);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, observer as Object);
+            }
         }
 
         private bool HandleTickFailure(
@@ -359,7 +487,7 @@ namespace Rutin.GameFramework.Ticking
             }
 
             Debug.LogException(exception, tickable as Object);
-            Unregister(tickable);
+            Unregister(tickable, TickUnregistrationReason.Quarantined);
             return true;
         }
 

@@ -58,8 +58,8 @@ jobs:
                현재 HEAD SHA에 대해 정확히 하나의 Submit review를 등록한다.
                - 머지를 막아야 하는 문제가 있으면:
                  gh pr review ${{ github.event.pull_request.number }} --request-changes
-               - 개선 의견만 있고 머지를 막을 필요가 없으면:
-                 gh pr review ${{ github.event.pull_request.number }} --comment
+               - 개선 의견만 있고 머지를 막을 필요가 없으면, 인라인 의견은 유지하되:
+                 gh pr review ${{ github.event.pull_request.number }} --approve
                - 지적할 문제가 없으면:
                  gh pr review ${{ github.event.pull_request.number }} --approve
                각 명령에는 검토 결과와 resolve한 기존 스레드 수를 요약한 review body를

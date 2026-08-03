@@ -39,6 +39,12 @@ namespace Rutin.GameFramework.Ticking
 
         public long TotalQuarantinedCount { get; private set; }
 
+        /// <summary>
+        /// Session aggregate of per-tickable discarded simulation time.
+        /// This workload metric can exceed wall-clock session duration.
+        /// </summary>
+        public double TotalDiscardedDeltaTimeSeconds { get; private set; }
+
         protected override void RegisterServiceContracts()
         {
             RegisterContract<ITickScheduler>();
@@ -48,16 +54,18 @@ namespace Rutin.GameFramework.Ticking
         {
             _hasShutDown = false;
             TotalQuarantinedCount = 0;
+            TotalDiscardedDeltaTimeSeconds = 0d;
             EnsureScheduler();
         }
 
         protected override void OnServiceShutdown()
         {
-            _scheduler?.Clear();
+            BudgetedTickScheduler scheduler = _scheduler;
             _scheduler = null;
             _hasShutDown = true;
             _consecutiveSaturatedFrames = 0;
             LastFrameStats = default;
+            scheduler?.Clear();
         }
 
         private void Update()
@@ -72,6 +80,8 @@ namespace Rutin.GameFramework.Ticking
                 frameBudgetMilliseconds,
                 maxVisitedItemsPerFrame,
                 maxAccumulatedDeltaTime);
+            TotalDiscardedDeltaTimeSeconds +=
+                LastFrameStats.DiscardedDeltaTimeSeconds;
             if (LastFrameStats.QuarantinedCount > 0)
             {
                 TotalQuarantinedCount += LastFrameStats.QuarantinedCount;
@@ -125,7 +135,11 @@ namespace Rutin.GameFramework.Ticking
                 Debug.LogWarning(
                     $"{nameof(TickSchedulerService)} has exceeded its processing budget for " +
                     $"{_consecutiveSaturatedFrames} consecutive frames. Registered=" +
-                    $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}.",
+                    $"{LastFrameStats.RegisteredCount}, visited={LastFrameStats.VisitedCount}, " +
+                    $"clamped={LastFrameStats.ClampedTickCount}, " +
+                    $"discardedTickSecondsTotal={TotalDiscardedDeltaTimeSeconds:F3}, " +
+                    $"maxDiscardedTickSecondsThisFrame=" +
+                    $"{LastFrameStats.MaximumDiscardedDeltaTimeSeconds:F3}.",
                     this);
             }
         }

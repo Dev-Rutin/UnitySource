@@ -90,6 +90,39 @@ namespace Rutin.GameFramework.Tests.EditMode
             }
         }
 
+        private sealed class ObservedTickable :
+            IGameTickable,
+            ITickSchedulerRegistrationObserver
+        {
+            public bool ThrowOnTick { get; set; }
+
+            public bool IsTickEnabled => true;
+
+            public int NotificationCount { get; private set; }
+
+            public TickUnregistrationReason LastReason { get; private set; }
+
+            public Action<ITickScheduler, TickUnregistrationReason>
+                OnUnregistered { get; set; }
+
+            public void Tick(float deltaTime)
+            {
+                if (ThrowOnTick)
+                {
+                    throw new InvalidOperationException("Observed tick failure");
+                }
+            }
+
+            public void OnTickSchedulerUnregistered(
+                ITickScheduler scheduler,
+                TickUnregistrationReason reason)
+            {
+                NotificationCount++;
+                LastReason = reason;
+                OnUnregistered?.Invoke(scheduler, reason);
+            }
+        }
+
         [Test]
         public void Register_DeduplicatesByReference()
         {
@@ -119,6 +152,51 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(secondBatch.ProcessedCount, Is.EqualTo(2));
             Assert.That(first.TickCount + second.TickCount + third.TickCount, Is.EqualTo(4));
             Assert.That(third.TickCount, Is.GreaterThanOrEqualTo(1));
+        }
+
+        [Test]
+        public void Tick_ReportsClampedSimulationTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ProbeTickable tickable = new();
+            scheduler.Register(tickable);
+
+            TickBatchStats stats = scheduler.Tick(
+                1f,
+                0d,
+                int.MaxValue,
+                0.25f);
+
+            Assert.That(tickable.LastDeltaTime, Is.EqualTo(0.25f).Within(0.0001f));
+            Assert.That(stats.ClampedTickCount, Is.EqualTo(1));
+            Assert.That(
+                stats.DiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
+            Assert.That(
+                stats.MaximumDiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
+        }
+
+        [Test]
+        public void Tick_DistinguishesAggregateAndMaximumDiscardedTime()
+        {
+            BudgetedTickScheduler scheduler = new();
+            scheduler.Register(new ProbeTickable());
+            scheduler.Register(new ProbeTickable());
+
+            TickBatchStats stats = scheduler.Tick(
+                1f,
+                0d,
+                int.MaxValue,
+                0.25f);
+
+            Assert.That(stats.ClampedTickCount, Is.EqualTo(2));
+            Assert.That(
+                stats.DiscardedDeltaTimeSeconds,
+                Is.EqualTo(1.5d).Within(0.0001d));
+            Assert.That(
+                stats.MaximumDiscardedDeltaTimeSeconds,
+                Is.EqualTo(0.75d).Within(0.0001d));
         }
 
         [Test]
@@ -331,6 +409,78 @@ namespace Rutin.GameFramework.Tests.EditMode
             Assert.That(stats.VisitedCount, Is.EqualTo(2));
             Assert.That(stats.ProcessedCount, Is.Zero);
             Assert.That(stats.RoundCompleted, Is.False);
+        }
+
+        [Test]
+        public void Unregister_NotifiesRegistrationObserver()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ObservedTickable observed = new();
+            scheduler.Register(observed);
+
+            scheduler.Unregister(observed);
+
+            Assert.That(observed.NotificationCount, Is.EqualTo(1));
+            Assert.That(
+                observed.LastReason,
+                Is.EqualTo(TickUnregistrationReason.Explicit));
+        }
+
+        [Test]
+        public void Clear_NotifiesRegistrationObserver()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ObservedTickable observed = new();
+            scheduler.Register(observed);
+
+            scheduler.Clear();
+
+            Assert.That(observed.NotificationCount, Is.EqualTo(1));
+            Assert.That(
+                observed.LastReason,
+                Is.EqualTo(TickUnregistrationReason.SchedulerCleared));
+        }
+
+        [Test]
+        public void Clear_AllowsObserversToReRegisterWithoutLoopingOrSkipping()
+        {
+            BudgetedTickScheduler scheduler = new();
+            ObservedTickable first = new();
+            ObservedTickable second = new();
+            first.OnUnregistered = (notifyingScheduler, reason) =>
+                notifyingScheduler.Register(first);
+            second.OnUnregistered = (notifyingScheduler, reason) =>
+                notifyingScheduler.Register(second);
+            scheduler.Register(first);
+            scheduler.Register(second);
+
+            scheduler.Clear();
+
+            Assert.That(first.NotificationCount, Is.EqualTo(1));
+            Assert.That(second.NotificationCount, Is.EqualTo(1));
+            Assert.That(scheduler.Count, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void Quarantine_NotifiesRegistrationObserver()
+        {
+            BudgetedTickScheduler scheduler = new(
+                failureQuarantineThreshold: 1);
+            ObservedTickable observed = new() { ThrowOnTick = true };
+            scheduler.Register(observed);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Observed tick failure"));
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex("Observed tick failure"));
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(observed.NotificationCount, Is.EqualTo(1));
+            Assert.That(
+                observed.LastReason,
+                Is.EqualTo(TickUnregistrationReason.Quarantined));
         }
     }
 }

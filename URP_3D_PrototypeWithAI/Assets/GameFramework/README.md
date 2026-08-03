@@ -12,6 +12,17 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   population. Disabled tickables still consume one visit from the item budget.
 - `TickSchedulerService` quarantines only repeated failures, rate-limits exception logs,
   and exposes the session total through `TotalQuarantinedCount`.
+- Time budgets are checked between tickables, so size them for the worst-case bounded work of one
+  player stack. `LastFrameStats.ClampedTickCount` / `DiscardedDeltaTimeSeconds` and
+  `TotalDiscardedDeltaTimeSeconds` expose the aggregate of per-tickable simulation time discarded
+  by the scheduler cap; this aggregate can exceed wall-clock time when many tickables clamp.
+  `LastFrameStats.MaximumDiscardedDeltaTimeSeconds` exposes the worst single tickable for the frame.
+  `PlayerCharacterMotorFeature.TotalDiscardedSimulationTimeSeconds` separately exposes time
+  discarded by its fixed-substep cap, including configurations where the motor cap is lower.
+- Scheduled features use an allocation-conscious dense observer registry to invalidate cached
+  default services and bind to a replacement scheduler, including while the feature is inactive.
+- Scheduler clear removes registrations before observer callbacks, so recovery callbacks can
+  safely register a new scheduling session without mutating a live iteration.
 
 ## Management
 
@@ -20,6 +31,77 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   `PooledObjectFactory`, to the same object.
 - Resolve contracts once through `GameManagerHost.Services` and cache the result in hot paths.
 - The registry never scans the scene and does not use LINQ.
+
+## Playable character
+
+- Add `CharacterController`, `GameplayEntity`, `PlayerCommandFeature`, and
+  `PlayerCharacterMotorFeature` to the player object.
+- Add `PlayerLookFeature` when the entity owns yaw/pitch transforms. Look commands are angular
+  deltas in degrees and are latched until consumed; jump presses are also latched. Look is a
+  dispatch-domain, unscaled view update and can continue while simulation time is paused. Disable
+  the command/view feature or its source when a game pause must also freeze the camera.
+- For local control, add `InputSystemPlayerCommandSource` from the separate
+  `Rutin.GameFramework.InputSystem` assembly and assign move, look, and jump actions.
+  `PlayerCommandFeature` discovers the source once during initialization. Enable
+  `lookValueIsAngularRate` for stick-style look actions; mouse-delta actions should leave it off.
+  This adapter uses one local `Update()` to latch frame-only Input System edges and deltas so a
+  budget-delayed simulation tick cannot lose them. Ownership, simulation, deactivation, and
+  scheduler-loss transitions discard the adapter's buffered input so stale edges cannot replay.
+- Custom `IPlayerCommandSource` components that sample frame input in `Update()` must execute
+  after `GameplayEntity` initialization and before `TickSchedulerService`; use an execution order
+  between `-9000` and `-8990`. Frame-latched sources should implement
+  `IBufferedPlayerCommandSource` so ownership and scheduler transitions can discard stale edges.
+- For remote/server control, call `SetLocallyControlled(false)` and submit immutable
+  `PlayerCommand` snapshots through `SubmitCommand`. Movement and view components do not depend
+  on the Unity Input System and can use network, replay, or AI command sources. Non-zero sequence
+  values reject duplicate/out-of-order packets, and remote movement becomes neutral after the
+  configured command timeout while gravity and other neutral simulation continue. Commands
+  submitted while the feature is inactive or locally controlled are rejected instead of
+  accumulating stale edges or mixing remote input into the local command stream.
+- Replay/server commands can set `SimulationDeltaTimeSeconds` to enter command-owned time mode.
+  Explicit durations received before one dispatch are accumulated; empty dispatches then advance
+  zero simulation time instead of mixing in the scheduler visit delta. Commands constructed
+  without the duration retain live-input timing. Preserve fixed-step settings, initial state,
+  collision world, and command order for deterministic replay. Use an `IPlayerCommandSource` when
+  every recorded movement transition must be consumed in a separate scheduler dispatch. Network
+  serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
+  use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
+  The payload normalizes non-finite move/look components and non-finite or negative durations to
+  zero. Yaw deltas are reduced modulo one turn and pitch deltas are saturated to one half-turn,
+  preventing a malformed packet from poisoning transforms. Finite duration budgets are enforced
+  once by the motor's observable command-backlog limit, after durations submitted within one
+  dispatch have been accumulated without a smaller intermediate clamp.
+  A remote timeout exits command-owned time and resumes live-timed neutral gravity simulation.
+  Set `remoteCommandTimeout` (or call `SetRemoteCommandTimeout`) to zero for deterministic streams
+  that must never fall back to wall-clock time; the default positive timeout remains safer for
+  network-owned players that should recover to neutral simulation after a disconnect. Timed
+  backlog preservation is guaranteed only while command-owned mode remains active, so streams
+  that must drain every recorded interval must disable the wall-clock timeout. Remote
+  streams may change timing mode after a dispatch; mixing timed and live commands inside one
+  pending dispatch returns `RetryAfterDispatch` from `SubmitCommandDetailed` to avoid silently
+  discarding either timing contract. Producers must retry that same immutable command after the
+  next dispatch so its look and jump edges are preserved. The legacy `SubmitCommand` boolean
+  wrapper returns `false` for every rejection category.
+- Call `SetSimulationEnabled(false)` when despawning or suspending authority. Ownership changes
+  clear held input and reset all command consumers.
+- Only `PlayerCommandFeature` inherits `ScheduledEntityFeature`. It pushes one command snapshot
+  to sorted motor/view consumers, making each player stack atomic even when the global scheduler
+  is budget-limited or swap-removes other entities. The motor integrates accumulated time using
+  bounded fixed substeps and buffers jump input briefly so a landing later in the same batch does
+  not lose the edge. Live wall-clock input discards excess accumulated time at the substep cap;
+  command-owned replay time retains excess as backlog and drains it across later zero-duration
+  dispatches, keeping the final replay state independent of command batching within the configured
+  `maximumCommandBacklogSeconds`. `PendingSimulationTimeSeconds` exposes current replay latency,
+  while excess beyond the finite backlog limit contributes to
+  `TotalDiscardedSimulationTimeSeconds`.
+- `PlayerCharacterMotorFeature` automatically uses `PlayerLookFeature.MovementReference` when no
+  explicit movement space is configured, keeping view and locomotion axes aligned. Look consumers
+  run before the motor so movement uses the current command's yaw without a one-tick delay.
+  Runtime `SetViewTransforms` changes update the automatic motor reference and preserve view
+  offsets; an explicit `SetMovementSpace` remains authoritative.
+- Inject a different `ITickScheduler` with `SetTickScheduler` for multi-world/server simulations.
+  Explicit injection, including `SetTickScheduler(null)` for detachment, never falls back to the
+  default world. Call `UseDefaultTickScheduler()` to opt back into default-host resolution.
 
 ## Factory and pooling
 
@@ -58,9 +140,10 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-07-30:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 22 passed, 0 failed | 0.161 s test duration |
-| PlayMode | 15 passed, 0 failed | 0.816 s test duration |
-| 5,000-object pooled rent/return | Passed | 85.332 ms, 0 managed bytes |
+| EditMode | 27 passed, 0 failed | 0.312 s test duration |
+| PlayMode | 42 passed, 0 failed | 1.111 s test duration |
+| 1,000 PC command/look ticks | Passed | 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 95.883 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
