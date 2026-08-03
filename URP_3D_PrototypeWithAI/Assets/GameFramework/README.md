@@ -64,8 +64,10 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   without the duration retain live-input timing. Preserve fixed-step settings, initial state,
   collision world, and command order for deterministic replay. Use an `IPlayerCommandSource` when
   every recorded movement transition must be consumed in a separate scheduler dispatch. Network
-  serialization must round-trip both `HasSimulationDeltaTime` and `SimulationDeltaTimeSeconds`;
-  use the six-argument `PlayerCommand` constructor when reconstructing a transported command.
+  serialization must round-trip `MoveSpace`, `HasSimulationDeltaTime`, and
+  `SimulationDeltaTimeSeconds`; use the seven-argument `PlayerCommand` constructor when
+  reconstructing a transported command. Commands created through the shorter constructors use
+  relative movement for backward-compatible local-player behavior.
   The payload normalizes non-finite move/look components and non-finite or negative durations to
   zero. Yaw deltas are reduced modulo one turn and pitch deltas are saturated to one half-turn,
   preventing a malformed packet from poisoning transforms. Finite duration budgets are enforced
@@ -140,11 +142,12 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   `SetStaggerSeed` with a stable spawn/network identifier for replay, migration, or cross-process
   repeatability. Call `ConfigureDecisionCadence(interval, 0)` only when immediate, synchronized
   evaluation is required.
-- When `PlayerCharacterMotorFeature` is present, its `MovementSpace` is the single effective
-  movement reference. `SetMovementSpace` updates the motor as well, and an active
-  `PlayerLookFeature` receives a yaw command so world-space intent can face and move toward the
-  destination without an encode/decode space mismatch.
-- World-space decision movement is sanitized and converted without managed allocation.
+- NPC decisions emit absolute `World` movement commands. The motor therefore follows the same
+  world direction even if a remote proxy loses an earlier orientation update or uses a rotated
+  local movement reference. Attach the optional `NpcFacingFeature` to rotate a configured yaw
+  root toward each absolute movement snapshot; the next received snapshot repairs visual facing
+  after packet loss without coupling movement correctness to consumer order.
+- World-space decision movement is sanitized and transported without managed allocation.
   Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
   remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
   Network/server sensors can populate the blackboard directly and do not depend on the Unity
@@ -178,11 +181,11 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 28 passed, 0 failed | 0.219 s test duration |
-| PlayMode | 65 passed, 0 failed | 1.582 s test duration |
+| EditMode | 28 passed, 0 failed | 0.390 s test duration |
+| PlayMode | 68 passed, 0 failed | 1.800 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 53.595 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 106.094 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 52.713 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 117.129 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

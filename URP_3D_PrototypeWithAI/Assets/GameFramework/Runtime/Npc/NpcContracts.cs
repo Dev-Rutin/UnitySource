@@ -11,7 +11,7 @@ namespace Rutin.GameFramework.Npc
 
     /// <summary>
     /// Immutable result produced by an NPC decision provider. WorldMove is a planar,
-    /// normalized intent so the brain can adapt it to the command stack's movement space.
+    /// normalized intent that the brain transports as an absolute world-space command.
     /// </summary>
     public readonly struct NpcDecision
     {

@@ -105,6 +105,34 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void CommandFeature_PreservesWorldMoveSpaceThroughDispatch()
+        {
+            BudgetedTickScheduler scheduler = new();
+            CreateCommandPlayer(
+                scheduler,
+                out ProbeCommandSource source,
+                out PlayerCommandFeature commands,
+                out ProbeCommandConsumer consumer);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                11,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
+
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(
+                consumer.LastCommand.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(
+                commands.CurrentCommand.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+        }
+
+        [Test]
         public void CommandFeature_DispatchesConsumersInDeclaredOrder()
         {
             BudgetedTickScheduler scheduler = new();
@@ -536,6 +564,35 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void Motor_WorldMoveIgnoresRotatedRelativeMovementSpace()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject player = CreateMotorPlayer(
+                scheduler,
+                "World Move Motor Player",
+                out ProbeCommandSource source,
+                out _);
+            PlayerCharacterMotorFeature motor =
+                player.GetComponent<PlayerCharacterMotorFeature>();
+            GameObject movementReference = CreateObject("Rotated Movement Reference");
+            movementReference.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            motor.SetMovementSpace(movementReference.transform);
+            source.Command = new PlayerCommand(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
+
+            scheduler.Tick(0.02f, 0d);
+
+            Assert.That(Mathf.Abs(motor.Velocity.x), Is.LessThan(0.0001f));
+            Assert.That(motor.Velocity.z, Is.GreaterThan(0f));
+        }
+
+        [Test]
         public void CommandFeature_UsesCommandSimulationDeltaForReplay()
         {
             BudgetedTickScheduler scheduler = new();
@@ -784,29 +841,39 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 live.JumpPressed,
                 live.Sequence,
                 live.SimulationDeltaTimeSeconds,
-                live.HasSimulationDeltaTime);
+                live.HasSimulationDeltaTime,
+                live.MoveSpace);
 
             Assert.That(restored.HasSimulationDeltaTime, Is.False);
             Assert.That(restored.SimulationDeltaTimeSeconds, Is.Zero);
+            Assert.That(
+                restored.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.Relative));
 
             PlayerCommand timed = new(
                 Vector2.down,
                 Vector2.zero,
                 false,
-                sequence: 8,
-                simulationDeltaTimeSeconds: 0.125f);
+                8,
+                0.125f,
+                true,
+                PlayerCommandMoveSpace.World);
             PlayerCommand restoredTimed = new(
                 timed.Move,
                 timed.Look,
                 timed.JumpPressed,
                 timed.Sequence,
                 timed.SimulationDeltaTimeSeconds,
-                timed.HasSimulationDeltaTime);
+                timed.HasSimulationDeltaTime,
+                timed.MoveSpace);
 
             Assert.That(restoredTimed.HasSimulationDeltaTime, Is.True);
             Assert.That(
                 restoredTimed.SimulationDeltaTimeSeconds,
                 Is.EqualTo(0.125f));
+            Assert.That(
+                restoredTimed.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
         }
 
         [Test]

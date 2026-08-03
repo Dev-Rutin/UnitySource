@@ -2,13 +2,20 @@ using UnityEngine;
 
 namespace Rutin.GameFramework.Player
 {
+    public enum PlayerCommandMoveSpace
+    {
+        Relative = 0,
+        World = 1
+    }
+
     /// <summary>
     /// Immutable command payload suitable for local input, replay, or network transport.
     /// Look is an angular delta in degrees for this command. A positive
     /// SimulationDeltaTimeSeconds makes replay simulation independent of scheduler timing.
     /// Commands constructed without a duration use the dispatch tick delta for live input;
     /// an explicitly supplied zero-duration command advances no simulation time. Network
-    /// serializers must transport both HasSimulationDeltaTime and SimulationDeltaTimeSeconds.
+    /// serializers must transport MoveSpace, HasSimulationDeltaTime, and
+    /// SimulationDeltaTimeSeconds.
     /// </summary>
     public readonly struct PlayerCommand
     {
@@ -49,12 +56,14 @@ namespace Rutin.GameFramework.Player
             bool jumpPressed,
             uint sequence,
             float simulationDeltaTimeSeconds,
-            bool hasSimulationDeltaTime)
+            bool hasSimulationDeltaTime,
+            PlayerCommandMoveSpace moveSpace = PlayerCommandMoveSpace.Relative)
         {
             Move = SanitizeMove(move);
             Look = SanitizeLook(look);
             JumpPressed = jumpPressed;
             Sequence = sequence;
+            MoveSpace = SanitizeMoveSpace(moveSpace);
             HasSimulationDeltaTime = hasSimulationDeltaTime;
             SimulationDeltaTimeSeconds = hasSimulationDeltaTime
                 ? SanitizeSimulationDeltaTime(simulationDeltaTimeSeconds)
@@ -68,6 +77,8 @@ namespace Rutin.GameFramework.Player
         public bool JumpPressed { get; }
 
         public uint Sequence { get; }
+
+        public PlayerCommandMoveSpace MoveSpace { get; }
 
         public bool HasSimulationDeltaTime { get; }
 
@@ -97,6 +108,14 @@ namespace Rutin.GameFramework.Player
         private static float SanitizeSimulationDeltaTime(float seconds)
         {
             return Mathf.Max(0f, SanitizeFinite(seconds));
+        }
+
+        private static PlayerCommandMoveSpace SanitizeMoveSpace(
+            PlayerCommandMoveSpace value)
+        {
+            return value == PlayerCommandMoveSpace.World
+                ? PlayerCommandMoveSpace.World
+                : PlayerCommandMoveSpace.Relative;
         }
 
         private static float SanitizeFinite(float value)

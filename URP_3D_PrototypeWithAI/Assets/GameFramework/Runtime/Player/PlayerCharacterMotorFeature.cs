@@ -50,6 +50,7 @@ namespace Rutin.GameFramework.Player
         private CharacterController _controller;
         private PlayerCommandFeature _commands;
         private Vector2 _desiredMove;
+        private PlayerCommandMoveSpace _desiredMoveSpace;
         private Vector3 _horizontalVelocity;
         private float _verticalVelocity;
         private double _accumulatedTime;
@@ -123,6 +124,7 @@ namespace Rutin.GameFramework.Player
             }
 
             _desiredMove = command.Move;
+            _desiredMoveSpace = command.MoveSpace;
             if (command.JumpPressed)
             {
                 _jumpBufferRemaining = Mathf.Max(
@@ -243,6 +245,11 @@ namespace Rutin.GameFramework.Player
 
         private Vector3 GetMovementDirection(Vector2 input)
         {
+            if (_desiredMoveSpace == PlayerCommandMoveSpace.World)
+            {
+                return new Vector3(input.x, 0f, input.y);
+            }
+
             Transform space = MovementSpace;
             Vector3 forward = space.forward;
             forward.y = 0f;
@@ -274,6 +281,7 @@ namespace Rutin.GameFramework.Player
         private void ResetMotion()
         {
             _desiredMove = Vector2.zero;
+            _desiredMoveSpace = PlayerCommandMoveSpace.Relative;
             _horizontalVelocity = Vector3.zero;
             _verticalVelocity = 0f;
             _accumulatedTime = 0f;

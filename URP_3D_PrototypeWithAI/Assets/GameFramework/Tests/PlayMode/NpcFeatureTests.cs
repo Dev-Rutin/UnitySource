@@ -395,7 +395,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void Brain_UsesMotorMovementSpaceAndTurnsLookTowardIntent()
+        public void Brain_UsesAbsoluteWorldMovementAndOptionalFacingConsumer()
         {
             BudgetedTickScheduler scheduler = new();
             GameObject npc = CreateObject("Oriented NPC");
@@ -407,7 +407,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             NpcBrainFeature brain = npc.AddComponent<NpcBrainFeature>();
             PlayerCharacterMotorFeature motor =
                 npc.AddComponent<PlayerCharacterMotorFeature>();
-            PlayerLookFeature look = npc.AddComponent<PlayerLookFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
             TransformTargetSensorFeature sensor =
                 npc.AddComponent<TransformTargetSensorFeature>();
             npc.AddComponent<IdlePatrolChaseDecisionFeature>();
@@ -416,7 +416,12 @@ namespace Rutin.GameFramework.Tests.PlayMode
             GameObject yawObject = CreateObject("NPC Yaw Root");
             yawObject.transform.SetParent(npc.transform, false);
             yawObject.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
-            look.SetViewTransforms(yawObject.transform, null);
+            facing.SetYawRoot(yawObject.transform);
+            GameObject movementReference = CreateObject("NPC Movement Reference");
+            movementReference.transform.SetParent(npc.transform, false);
+            movementReference.transform.localRotation =
+                Quaternion.Euler(0f, 90f, 0f);
+            motor.SetMovementSpace(movementReference.transform);
             GameObject target = CreateObject("Oriented NPC Target");
             target.transform.position = Vector3.forward * 10f;
             sensor.SetTarget(target.transform);
@@ -425,15 +430,54 @@ namespace Rutin.GameFramework.Tests.PlayMode
             brain.ConfigureDecisionCadence(0f, 0f);
             npc.SetActive(true);
 
-            Assert.That(brain.MovementSpace, Is.SameAs(motor.MovementSpace));
-            Assert.That(brain.MovementSpace, Is.SameAs(yawObject.transform));
+            scheduler.Tick(0.02f, 0d);
 
-            scheduler.Tick(0.016f, 0d);
-
-            Assert.That(consumer.LastCommand.Move.y, Is.GreaterThan(0.99f));
             Assert.That(
-                Mathf.Abs(consumer.LastCommand.Look.x),
-                Is.EqualTo(90f).Within(0.01f));
+                consumer.LastCommand.MoveSpace,
+                Is.EqualTo(PlayerCommandMoveSpace.World));
+            Assert.That(consumer.LastCommand.Move.x, Is.Zero.Within(0.0001f));
+            Assert.That(consumer.LastCommand.Move.y, Is.GreaterThan(0.99f));
+            Assert.That(consumer.LastCommand.Look, Is.EqualTo(Vector2.zero));
+            Assert.That(
+                Vector3.Dot(yawObject.transform.forward, Vector3.forward),
+                Is.GreaterThan(0.99f));
+            Assert.That(Mathf.Abs(motor.Velocity.x), Is.LessThan(0.0001f));
+            Assert.That(motor.Velocity.z, Is.GreaterThan(0f));
+        }
+
+        [Test]
+        public void Facing_NextAbsoluteSnapshotRepairsOrientationAfterSequenceGap()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Remote Facing NPC");
+            npc.SetActive(false);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
+            GameObject yawObject = CreateObject("Remote NPC Yaw Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            facing.SetYawRoot(yawObject.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            npc.SetActive(true);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.right, sequence: 1)),
+                Is.True);
+            scheduler.Tick(0.016f, 0d);
+            Assert.That(
+                Vector3.Dot(yawObject.transform.forward, Vector3.right),
+                Is.GreaterThan(0.99f));
+
+            yawObject.transform.rotation = Quaternion.LookRotation(Vector3.back);
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.up, sequence: 3)),
+                Is.True);
+            scheduler.Tick(0.016f, 0.016d);
+
             Assert.That(
                 Vector3.Dot(yawObject.transform.forward, Vector3.forward),
                 Is.GreaterThan(0.99f));
@@ -543,6 +587,20 @@ namespace Rutin.GameFramework.Tests.PlayMode
             GameObject instance = new(name);
             _createdObjects.Add(instance);
             return instance;
+        }
+
+        private static PlayerCommand CreateWorldCommand(
+            Vector2 move,
+            uint sequence)
+        {
+            return new PlayerCommand(
+                move,
+                Vector2.zero,
+                false,
+                sequence,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
         }
 
         private static double ReadPositiveEnvironmentDouble(

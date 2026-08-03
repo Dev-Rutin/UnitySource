@@ -25,8 +25,6 @@ namespace Rutin.GameFramework.Npc
         [Tooltip("Negative values deterministically stagger the first decision across the interval.")]
         [SerializeField] private float initialDecisionDelaySeconds = -1f;
 
-        [SerializeField] private Transform movementSpace;
-
         private readonly List<INpcSensor> _sensors = new(4);
         private readonly List<INpcSensor> _sensorSnapshot = new(4);
         private readonly List<INpcSensor> _sensorResetSnapshot = new(4);
@@ -34,8 +32,6 @@ namespace Rutin.GameFramework.Npc
         private readonly List<INpcDecisionProvider> _decisionSnapshot = new(4);
         private readonly List<INpcDecisionProvider> _decisionResetSnapshot = new(4);
         private PlayerCommandFeature _commands;
-        private PlayerCharacterMotorFeature _motor;
-        private PlayerLookFeature _look;
         private NpcBlackboard _blackboard;
         private NpcDecision _currentDecision;
         private float _decisionElapsedSeconds;
@@ -60,13 +56,6 @@ namespace Rutin.GameFramework.Npc
 
         public float TimeUntilNextDecisionSeconds =>
             Mathf.Max(0f, _timeUntilNextDecisionSeconds);
-
-        public Transform MovementSpace =>
-            _motor != null
-                ? _motor.MovementSpace
-                : movementSpace != null
-                    ? movementSpace
-                    : transform;
 
         public bool HasExplicitStaggerSeed => _hasExplicitStaggerSeed;
 
@@ -121,12 +110,6 @@ namespace Rutin.GameFramework.Npc
             _staggerSeed = 0;
             _decisionElapsedSeconds = 0f;
             _timeUntilNextDecisionSeconds = ResolveInitialDelay();
-        }
-
-        public void SetMovementSpace(Transform value)
-        {
-            movementSpace = value;
-            _motor?.SetMovementSpace(value);
         }
 
         public bool RegisterSensor(INpcSensor sensor)
@@ -235,17 +218,18 @@ namespace Rutin.GameFramework.Npc
                     SanitizeNonNegative(decisionIntervalSeconds);
             }
 
-            BuildMovementAndLookCommand(
-                _currentDecision.WorldMove,
-                out Vector2 move,
-                out Vector2 look);
+            Vector3 worldMove = _currentDecision.WorldMove;
+            Vector2 move = new(worldMove.x, worldMove.z);
             bool jumpPressed = _pendingJump;
             _pendingJump = false;
             return new PlayerCommand(
                 move,
-                look,
+                Vector2.zero,
                 jumpPressed,
-                NextCommandSequence());
+                NextCommandSequence(),
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
         }
 
         public void DiscardBufferedInput()
@@ -256,13 +240,6 @@ namespace Rutin.GameFramework.Npc
         protected override void OnFeatureInitialized()
         {
             _commands = GetComponent<PlayerCommandFeature>();
-            _motor = GetComponent<PlayerCharacterMotorFeature>();
-            _look = GetComponent<PlayerLookFeature>();
-            if (_motor != null && movementSpace != null)
-            {
-                _motor.SetMovementSpace(movementSpace);
-            }
-
             _commands.SetCommandSource(this);
             ResetRuntimeState(true);
         }
@@ -287,8 +264,6 @@ namespace Rutin.GameFramework.Npc
             }
 
             _commands = null;
-            _motor = null;
-            _look = null;
             _sensors.Clear();
             _sensorSnapshot.Clear();
             _sensorResetSnapshot.Clear();
@@ -532,64 +507,6 @@ namespace Rutin.GameFramework.Npc
                 _decisionResetSnapshot.Clear();
                 _isResettingParticipants = false;
             }
-        }
-
-        private void BuildMovementAndLookCommand(
-            Vector3 worldMove,
-            out Vector2 move,
-            out Vector2 look)
-        {
-            move = ConvertWorldMoveToLocal(worldMove);
-            look = Vector2.zero;
-            if (_look == null ||
-                !_look.IsFeatureActive ||
-                worldMove.sqrMagnitude <= 0.0001f)
-            {
-                return;
-            }
-
-            Transform lookReference = _look.MovementReference;
-            Vector3 lookForward = lookReference.forward;
-            lookForward.y = 0f;
-            if (lookForward.sqrMagnitude <= 0.0001f)
-            {
-                lookForward = Vector3.forward;
-            }
-            else
-            {
-                lookForward.Normalize();
-            }
-
-            Vector3 desiredForward = worldMove.normalized;
-            float yawDelta = Vector3.SignedAngle(
-                lookForward,
-                desiredForward,
-                Vector3.up);
-            look = new Vector2(yawDelta, 0f);
-            if (ReferenceEquals(MovementSpace, lookReference))
-            {
-                move = Vector2.up * worldMove.magnitude;
-            }
-        }
-
-        private Vector2 ConvertWorldMoveToLocal(Vector3 worldMove)
-        {
-            Transform space = MovementSpace;
-            Vector3 forward = space.forward;
-            forward.y = 0f;
-            forward = forward.sqrMagnitude > 0.0001f
-                ? forward.normalized
-                : Vector3.forward;
-            Vector3 right = space.right;
-            right.y = 0f;
-            right = right.sqrMagnitude > 0.0001f
-                ? right.normalized
-                : Vector3.right;
-            return Vector2.ClampMagnitude(
-                new Vector2(
-                    Vector3.Dot(worldMove, right),
-                    Vector3.Dot(worldMove, forward)),
-                1f);
         }
 
         private float ResolveInitialDelay()
