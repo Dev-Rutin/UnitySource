@@ -154,8 +154,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   local movement reference. Attach the optional `NpcFacingFeature` to rotate a configured yaw
   root toward each absolute movement snapshot; the next received snapshot repairs visual facing
   after packet loss without coupling movement correctness to consumer order. With an explicitly
-  assigned child yaw root, facing composes yaw over the captured authored local base rotation and
-  restores that base on pooling/authority/scheduler resets. The default entity-root fallback uses
+  assigned child yaw root, facing replaces the captured base heading while preserving its
+  pitch/roll offset, and restores the complete authored base rotation on
+  pooling/authority/scheduler resets. The default entity-root fallback uses
   absolute yaw and leaves reset/spawn rotation ownership to gameplay or the spawner, preventing
   activation from overwriting a pooled instance's new spawn rotation. An optional turn-speed
   limit is supported (`0` keeps immediate deterministic snapping).
@@ -202,9 +203,13 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 | EditMode | 28 passed, 0 failed | 0.259 s test duration |
 | PlayMode | 75 passed, 0 failed | 1.452 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 48.419 ms, 0 managed bytes |
+| 1,000 NPC brain/decision cores x 10 ticks | Passed | 48.419 ms, 0 managed bytes |
 | 5,000-object pooled rent/return | Passed | 95.369 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the
 central `ITickScheduler` rather than activating the entire population in one frame.
+The 1,000-NPC figure isolates scheduler fairness plus brain, policy, and command-dispatch cost;
+it intentionally excludes project-specific sensors, `CharacterController`, collision, and motor
+cost. Profile the complete production prefab and collision world before choosing a concurrency
+target.

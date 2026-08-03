@@ -7,6 +7,7 @@ using Rutin.GameFramework.Npc;
 using Rutin.GameFramework.Player;
 using Rutin.GameFramework.Ticking;
 using UnityEngine;
+using UnityEngine.TestTools;
 using Debug = UnityEngine.Debug;
 
 namespace Rutin.GameFramework.Tests.PlayMode
@@ -79,6 +80,12 @@ namespace Rutin.GameFramework.Tests.PlayMode
 
             public Action SenseAction { get; set; }
 
+            public bool SetsTarget { get; set; }
+
+            public UnityEngine.Object Target { get; set; }
+
+            public Vector3 TargetPosition { get; set; }
+
             public int SenseCount { get; private set; }
 
             public int ResetCount { get; private set; }
@@ -88,6 +95,11 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 float deltaTime)
             {
                 SenseCount++;
+                if (SetsTarget)
+                {
+                    blackboard.SetTarget(Target, TargetPosition);
+                }
+
                 SenseAction?.Invoke();
             }
 
@@ -304,6 +316,51 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(brain.DecisionCount, Is.Zero);
             Assert.That(brain.CurrentDecision.State, Is.EqualTo(NpcBehaviourState.Idle));
             Assert.That(consumer.LastCommand, Is.EqualTo(PlayerCommand.Neutral));
+        }
+
+        [Test]
+        public void Brain_FailingSensorDoesNotClearEarlierSensorResult()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateNpc(
+                scheduler,
+                "Fault-Isolated Sensor NPC",
+                out NpcBrainFeature brain,
+                out _,
+                out _,
+                activate: false);
+            GameObject target = CreateObject("Sensor Target");
+            target.transform.position = Vector3.right * 4f;
+            ProbeSensor targetSensor = npc.AddComponent<ProbeSensor>();
+            targetSensor.SensorOrder = -100;
+            targetSensor.SetsTarget = true;
+            targetSensor.Target = target;
+            targetSensor.TargetPosition = target.transform.position;
+            ProbeSensor failingSensor = npc.AddComponent<ProbeSensor>();
+            failingSensor.SensorOrder = 100;
+            failingSensor.SenseAction = () =>
+                throw new InvalidOperationException("Sensor failure");
+            Assert.That(brain.RegisterSensor(targetSensor), Is.True);
+            Assert.That(brain.RegisterSensor(failingSensor), Is.True);
+            npc.SetActive(true);
+
+            LogAssert.Expect(
+                LogType.Exception,
+                new System.Text.RegularExpressions.Regex(
+                    "InvalidOperationException: Sensor failure"));
+            scheduler.Tick(0.016f, 0d);
+
+            Assert.That(targetSensor.SenseCount, Is.EqualTo(1));
+            Assert.That(failingSensor.SenseCount, Is.EqualTo(1));
+            Assert.That(brain.Blackboard.HasTarget, Is.True);
+            Assert.That(brain.Blackboard.Target, Is.SameAs(target));
+
+            scheduler.Tick(0.016f, 0.016d);
+
+            Assert.That(targetSensor.SenseCount, Is.EqualTo(2));
+            Assert.That(failingSensor.SenseCount, Is.EqualTo(1));
+            Assert.That(brain.Blackboard.HasTarget, Is.True);
+            Assert.That(brain.Blackboard.Target, Is.SameAs(target));
         }
 
         [Test]
@@ -600,6 +657,8 @@ namespace Rutin.GameFramework.Tests.PlayMode
             yawObject.transform.SetParent(npc.transform, false);
             Quaternion baseRotation = Quaternion.Euler(10f, 20f, 30f);
             yawObject.transform.localRotation = baseRotation;
+            float baseVerticalForward =
+                (baseRotation * Vector3.forward).y;
             facing.SetYawRoot(yawObject.transform);
             commands.SetTickScheduler(scheduler);
             commands.SetLocallyControlled(false);
@@ -611,13 +670,16 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 Is.True);
             scheduler.Tick(0.016f, 0d);
 
-            Quaternion expectedFacing = baseRotation *
-                Quaternion.AngleAxis(90f, Vector3.up);
+            Vector3 facingForward = yawObject.transform.forward;
+            Vector3 planarFacing = Vector3.ProjectOnPlane(
+                facingForward,
+                Vector3.up).normalized;
             Assert.That(
-                Quaternion.Angle(
-                    yawObject.transform.localRotation,
-                    expectedFacing),
-                Is.LessThan(0.01f));
+                Vector3.Dot(planarFacing, Vector3.right),
+                Is.GreaterThan(0.99f));
+            Assert.That(
+                facingForward.y,
+                Is.EqualTo(baseVerticalForward).Within(0.01f));
 
             commands.SetSimulationEnabled(false);
 
@@ -699,7 +761,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
-        public void ThousandNpcBrains_AreFairAllocationFreeAndWithinBudget()
+        public void ThousandNpcBrainCores_AreFairAllocationFreeAndWithinBudget()
         {
             const int Population = 1000;
             const int WarmupTicks = 16;

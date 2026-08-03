@@ -23,6 +23,7 @@ namespace Rutin.GameFramework.Npc
         private PlayerCommandFeature _commands;
         private Transform _capturedYawRoot;
         private Quaternion _baseYawRotation;
+        private Quaternion _baseFacingOffset;
         private bool _hasCapturedBaseRotation;
 
         public int CommandOrder => -100;
@@ -79,7 +80,7 @@ namespace Rutin.GameFramework.Npc
                 Quaternion.AngleAxis(yawDegrees, Vector3.up);
             Quaternion targetRotation = UsesEntityRoot
                 ? absoluteYaw
-                : _baseYawRotation * absoluteYaw;
+                : absoluteYaw * _baseFacingOffset;
             float turnSpeed = SanitizeNonNegative(turnSpeedDegreesPerSecond);
             activeYawRoot.localRotation = turnSpeed <= 0f
                 ? targetRotation
@@ -121,6 +122,21 @@ namespace Rutin.GameFramework.Npc
 
             _capturedYawRoot = YawRoot;
             _baseYawRotation = _capturedYawRoot.localRotation;
+            Vector3 baseForward = _baseYawRotation * Vector3.forward;
+            baseForward.y = 0f;
+            if (baseForward.sqrMagnitude > 0.0001f)
+            {
+                Quaternion baseHeading = Quaternion.LookRotation(
+                    baseForward.normalized,
+                    Vector3.up);
+                _baseFacingOffset =
+                    Quaternion.Inverse(baseHeading) * _baseYawRotation;
+            }
+            else
+            {
+                _baseFacingOffset = Quaternion.identity;
+            }
+
             _hasCapturedBaseRotation = true;
         }
 

@@ -79,7 +79,8 @@ namespace Rutin.GameFramework.Npc
 
     /// <summary>
     /// Per-agent, value-type working memory. Sensors repopulate perception on each decision;
-    /// stale targets therefore cannot survive sensor removal, pooling, or authority changes.
+    /// stale targets therefore cannot survive the next sensing pass after sensor removal,
+    /// pooling, or authority changes.
     /// </summary>
     public struct NpcBlackboard
     {

@@ -145,7 +145,6 @@ namespace Rutin.GameFramework.Npc
             }
 
             _sensors.RemoveAt(index);
-            _blackboard.ClearTarget();
             _runtimeStateClean = false;
             return true;
         }
