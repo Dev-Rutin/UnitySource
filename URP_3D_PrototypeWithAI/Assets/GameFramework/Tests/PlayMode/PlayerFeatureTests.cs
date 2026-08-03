@@ -877,6 +877,36 @@ namespace Rutin.GameFramework.Tests.PlayMode
         }
 
         [Test]
+        public void PlayerCommand_WorldMoveHelperHonorsMoveSpace()
+        {
+            GameObject reference = CreateObject("Move Space Reference");
+            reference.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            PlayerCommand relative = new(
+                Vector2.up,
+                Vector2.zero,
+                false);
+            PlayerCommand world = new(
+                Vector2.up,
+                Vector2.zero,
+                false,
+                1,
+                0f,
+                false,
+                PlayerCommandMoveSpace.World);
+
+            Assert.That(
+                Vector3.Dot(
+                    relative.GetWorldMoveDirection(reference.transform),
+                    Vector3.right),
+                Is.GreaterThan(0.99f));
+            Assert.That(
+                Vector3.Dot(
+                    world.GetWorldMoveDirection(reference.transform),
+                    Vector3.forward),
+                Is.GreaterThan(0.99f));
+        }
+
+        [Test]
         public void PlayerCommand_SanitizesUntrustedSimulationDurations()
         {
             PlayerCommand notANumber = new(

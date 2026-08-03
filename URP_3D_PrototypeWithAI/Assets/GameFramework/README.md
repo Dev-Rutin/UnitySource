@@ -58,6 +58,11 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   configured command timeout while gravity and other neutral simulation continue. Commands
   submitted while the feature is inactive or locally controlled are rejected instead of
   accumulating stale edges or mixing remote input into the local command stream.
+- `PlayerCommand.MoveSpace` defines how every movement consumer interprets `Move`: `Relative`
+  uses x as right/strafe and y as forward in the stack's movement reference, while `World` uses
+  x as world X and y as world Z. Custom animation, prediction, and correction consumers must
+  branch on this value. Call `GetWorldMoveDirection(relativeSpace)` to resolve either form to one
+  allocation-free world-space vector instead of duplicating the conversion.
 - Replay/server commands can set `SimulationDeltaTimeSeconds` to enter command-owned time mode.
   Explicit durations received before one dispatch are accumulated; empty dispatches then advance
   zero simulation time instead of mixing in the scheduler visit delta. Commands constructed
@@ -146,7 +151,9 @@ This folder contains the allocation-conscious foundation for modular gameplay.
   world direction even if a remote proxy loses an earlier orientation update or uses a rotated
   local movement reference. Attach the optional `NpcFacingFeature` to rotate a configured yaw
   root toward each absolute movement snapshot; the next received snapshot repairs visual facing
-  after packet loss without coupling movement correctness to consumer order.
+  after packet loss without coupling movement correctness to consumer order. Facing composes yaw
+  over the root's captured local base rotation, restores that base on pooling/authority/scheduler
+  resets, and supports an optional turn-speed limit (`0` keeps immediate deterministic snapping).
 - World-space decision movement is sanitized and transported without managed allocation.
   Authoritative server NPCs keep the brain enabled and the command feature locally sourced;
   remote proxies disable decision-making and submit replicated `PlayerCommand` snapshots instead.
@@ -181,11 +188,11 @@ Unity `6000.3.9f1`, Windows Editor, batch mode on 2026-08-03:
 
 | Suite | Result | Duration / measurement |
 | --- | --- | --- |
-| EditMode | 28 passed, 0 failed | 0.390 s test duration |
-| PlayMode | 68 passed, 0 failed | 1.800 s test duration |
+| EditMode | 28 passed, 0 failed | 0.199 s test duration |
+| PlayMode | 70 passed, 0 failed | 1.491 s test duration |
 | 1,000 PC command/look ticks | Passed | 0 managed bytes |
-| 1,000 NPCs × 10 decision/command ticks | Passed | 52.713 ms, 0 managed bytes |
-| 5,000-object pooled rent/return | Passed | 117.129 ms, 0 managed bytes |
+| 1,000 NPCs × 10 decision/command ticks | Passed | 44.346 ms, 0 managed bytes |
+| 5,000-object pooled rent/return | Passed | 96.996 ms, 0 managed bytes |
 
 The 5,000-object figure is a bulk upper-bound measurement, not a per-frame target.
 At 60 FPS, gameplay code should distribute activation work across frames and use the

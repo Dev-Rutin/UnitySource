@@ -16,7 +16,13 @@ namespace Rutin.GameFramework.Npc
     {
         [SerializeField] private Transform yawRoot;
 
+        [Min(0f)]
+        [Tooltip("Zero snaps immediately; positive values limit yaw speed in degrees per second.")]
+        [SerializeField] private float turnSpeedDegreesPerSecond;
+
         private PlayerCommandFeature _commands;
+        private Quaternion _baseYawRotation;
+        private bool _hasCapturedBaseRotation;
 
         public int CommandOrder => -100;
 
@@ -24,7 +30,19 @@ namespace Rutin.GameFramework.Npc
 
         public void SetYawRoot(Transform value)
         {
+            if (ReferenceEquals(yawRoot, value))
+            {
+                return;
+            }
+
+            RestoreBaseRotation();
             yawRoot = value;
+            CaptureBaseRotation();
+        }
+
+        public void SetTurnSpeed(float degreesPerSecond)
+        {
+            turnSpeedDegreesPerSecond = SanitizeNonNegative(degreesPerSecond);
         }
 
         public void ProcessPlayerCommand(PlayerCommand command, float deltaTime)
@@ -36,24 +54,77 @@ namespace Rutin.GameFramework.Npc
                 return;
             }
 
-            Vector3 worldForward = new(command.Move.x, 0f, command.Move.y);
-            YawRoot.rotation = Quaternion.LookRotation(worldForward, Vector3.up);
+            Transform activeYawRoot = YawRoot;
+            Vector3 worldForward = command.GetWorldMoveDirection(null);
+            Vector3 localForward = activeYawRoot.parent != null
+                ? activeYawRoot.parent.InverseTransformDirection(worldForward)
+                : worldForward;
+            localForward.y = 0f;
+            if (localForward.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+
+            float yawDegrees = Mathf.Atan2(
+                localForward.x,
+                localForward.z) * Mathf.Rad2Deg;
+            Quaternion targetRotation = _baseYawRotation *
+                Quaternion.AngleAxis(yawDegrees, Vector3.up);
+            float turnSpeed = SanitizeNonNegative(turnSpeedDegreesPerSecond);
+            activeYawRoot.localRotation = turnSpeed <= 0f
+                ? targetRotation
+                : Quaternion.RotateTowards(
+                    activeYawRoot.localRotation,
+                    targetRotation,
+                    turnSpeed * SanitizeNonNegative(deltaTime));
         }
 
         public void ResetPlayerCommandState()
         {
+            RestoreBaseRotation();
         }
 
         protected override void OnFeatureInitialized()
         {
             _commands = GetComponent<PlayerCommandFeature>();
+            CaptureBaseRotation();
             _commands.RegisterConsumer(this);
         }
 
         protected override void OnFeatureShutdown()
         {
             _commands?.UnregisterConsumer(this);
+            RestoreBaseRotation();
+            _hasCapturedBaseRotation = false;
             _commands = null;
+        }
+
+        private void CaptureBaseRotation()
+        {
+            if (!IsFeatureInitialized)
+            {
+                return;
+            }
+
+            _baseYawRotation = YawRoot.localRotation;
+            _hasCapturedBaseRotation = true;
+        }
+
+        private void RestoreBaseRotation()
+        {
+            if (!_hasCapturedBaseRotation)
+            {
+                return;
+            }
+
+            YawRoot.localRotation = _baseYawRotation;
+        }
+
+        private static float SanitizeNonNegative(float value)
+        {
+            return float.IsNaN(value) || float.IsInfinity(value)
+                ? 0f
+                : Mathf.Max(0f, value);
         }
     }
 }

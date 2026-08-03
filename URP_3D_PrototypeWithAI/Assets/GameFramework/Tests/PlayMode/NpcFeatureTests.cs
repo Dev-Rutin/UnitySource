@@ -415,7 +415,6 @@ namespace Rutin.GameFramework.Tests.PlayMode
                 npc.AddComponent<ProbeCommandConsumer>();
             GameObject yawObject = CreateObject("NPC Yaw Root");
             yawObject.transform.SetParent(npc.transform, false);
-            yawObject.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
             facing.SetYawRoot(yawObject.transform);
             GameObject movementReference = CreateObject("NPC Movement Reference");
             movementReference.transform.SetParent(npc.transform, false);
@@ -429,6 +428,7 @@ namespace Rutin.GameFramework.Tests.PlayMode
             commands.RegisterConsumer(consumer);
             brain.ConfigureDecisionCadence(0f, 0f);
             npc.SetActive(true);
+            yawObject.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
 
             scheduler.Tick(0.02f, 0d);
 
@@ -481,6 +481,48 @@ namespace Rutin.GameFramework.Tests.PlayMode
             Assert.That(
                 Vector3.Dot(yawObject.transform.forward, Vector3.forward),
                 Is.GreaterThan(0.99f));
+        }
+
+        [Test]
+        public void Facing_PreservesAuthoredBaseAndRestoresItOnCommandReset()
+        {
+            BudgetedTickScheduler scheduler = new();
+            GameObject npc = CreateObject("Base Rotation NPC");
+            npc.SetActive(false);
+            npc.AddComponent<GameplayEntity>();
+            PlayerCommandFeature commands =
+                npc.AddComponent<PlayerCommandFeature>();
+            NpcFacingFeature facing = npc.AddComponent<NpcFacingFeature>();
+            GameObject yawObject = CreateObject("Authored NPC Yaw Root");
+            yawObject.transform.SetParent(npc.transform, false);
+            Quaternion baseRotation = Quaternion.Euler(10f, 20f, 30f);
+            yawObject.transform.localRotation = baseRotation;
+            facing.SetYawRoot(yawObject.transform);
+            commands.SetTickScheduler(scheduler);
+            commands.SetLocallyControlled(false);
+            npc.SetActive(true);
+
+            Assert.That(
+                commands.SubmitCommand(
+                    CreateWorldCommand(Vector2.right, sequence: 1)),
+                Is.True);
+            scheduler.Tick(0.016f, 0d);
+
+            Quaternion expectedFacing = baseRotation *
+                Quaternion.AngleAxis(90f, Vector3.up);
+            Assert.That(
+                Quaternion.Angle(
+                    yawObject.transform.localRotation,
+                    expectedFacing),
+                Is.LessThan(0.01f));
+
+            commands.SetSimulationEnabled(false);
+
+            Assert.That(
+                Quaternion.Angle(
+                    yawObject.transform.localRotation,
+                    baseRotation),
+                Is.LessThan(0.01f));
         }
 
         [Test]
