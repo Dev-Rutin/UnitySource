@@ -1,0 +1,21 @@
+{
+  "name": "Rutin.GunShop.Tests.EditMode",
+  "rootNamespace": "Rutin.GunShop.Tests.EditMode",
+  "references": [
+    "Rutin.GunShop.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
