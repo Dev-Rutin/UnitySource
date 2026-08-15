@@ -1,0 +1,19 @@
+{
+  "name": "Rutin.GunShop.Tests.PlayMode",
+  "rootNamespace": "Rutin.GunShop.Tests.PlayMode",
+  "references": [
+    "Rutin.GunShop.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
