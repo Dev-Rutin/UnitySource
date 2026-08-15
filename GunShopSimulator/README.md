@@ -27,3 +27,14 @@ Unity 6 기반 PC 싱글플레이 물리 시뮬레이터 프로젝트입니다. 
 5. 병합 확인 후 다음 기능을 시작합니다.
 
 기존 `URP_3D_PrototypeWithAI` 프레임워크 프로젝트는 이 프로젝트의 변경 범위에 포함하지 않습니다.
+
+## 양손 물리 조작 프로토타입
+
+`Assets/GunShop/Scenes/DualHandWorkbenchPrototype.unity`에서 조립 작업대와 양손 물리 조작을 확인할 수 있습니다.
+
+- 왼손 이동: `WASD`(수평·전후), `Q/E`(아래·위)
+- 오른손 이동: `IJKL`(수평·전후), `U/O`(아래·위)
+- 왼손 회전: `Left Alt`를 누른 채 왼손 이동키
+- 오른손 회전: `Right Alt`를 누른 채 오른손 이동키
+- grip 유지: `Left Shift` 또는 `Right Shift`
+- 작업대 카메라: 마우스 이동, `Esc`로 커서 해제, 마우스 왼쪽 버튼으로 다시 고정
